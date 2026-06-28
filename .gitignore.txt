@@ -1,0 +1,28 @@
+# Visual Studio
+.vs/
+bin/
+obj/
+
+# Visual Studio Code
+.vscode/
+
+# Node.js
+node_modules/
+.next/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# Docker
+docker/postgres/data/
+
+# n8n
+n8n/credentials/
+
+# OS
+.DS_Store
+Thumbs.db
