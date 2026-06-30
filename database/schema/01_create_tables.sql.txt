@@ -1,0 +1,18 @@
+CREATE TABLE Proveedores (
+    IdProveedor SERIAL PRIMARY KEY,
+    Nombre VARCHAR(150) NOT NULL,
+    Contacto VARCHAR(100),
+    Telefono VARCHAR(30),
+    Correo VARCHAR(100),
+    DiaPedido SMALLINT,
+    DiaEntrega SMALLINT,
+    Activo BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE PoliticasCompra (
+    IdPolitica SERIAL PRIMARY KEY,
+    SemanasPromedio SMALLINT NOT NULL DEFAULT 4,
+    DiasInventarioObjetivo SMALLINT NOT NULL DEFAULT 14,
+    DiasProductoMuerto SMALLINT NOT NULL DEFAULT 60,
+    FechaActualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
