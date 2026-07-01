@@ -16,3 +16,129 @@ CREATE TABLE PoliticasCompra (
     DiasProductoMuerto SMALLINT NOT NULL DEFAULT 60,
     FechaActualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE Departamentos (
+    IdDepartamento SERIAL PRIMARY KEY,
+    Nombre VARCHAR(100) NOT NULL UNIQUE,
+    Activo BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE Productos (
+    IdProducto SERIAL PRIMARY KEY,
+
+    CodigoBarras VARCHAR(30) UNIQUE,
+    ClaveEleventa VARCHAR(30),
+
+    Nombre VARCHAR(250) NOT NULL,
+
+    IdDepartamento INT NOT NULL,
+    IdProveedor INT NOT NULL,
+
+    Costo DECIMAL(10,2) NOT NULL,
+    PrecioVenta DECIMAL(10,2) NOT NULL,
+
+    Activo BOOLEAN NOT NULL DEFAULT TRUE,
+
+    CONSTRAINT FK_Productos_Departamentos
+        FOREIGN KEY (IdDepartamento)
+        REFERENCES Departamentos(IdDepartamento),
+
+    CONSTRAINT FK_Productos_Proveedores
+        FOREIGN KEY (IdProveedor)
+        REFERENCES Proveedores(IdProveedor)
+);
+
+
+CREATE TABLE Importaciones (
+    IdImportacion SERIAL PRIMARY KEY,
+
+    TipoArchivo VARCHAR(30) NOT NULL,
+    NombreArchivo VARCHAR(255) NOT NULL,
+
+    FechaImportacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    RegistrosImportados INT NOT NULL,
+
+    Observaciones TEXT
+);
+
+
+CREATE TABLE Ventas (
+    IdVenta SERIAL PRIMARY KEY,
+
+    IdProducto INT NOT NULL,
+
+    Fecha DATE NOT NULL,
+
+    CantidadVendida NUMERIC(10,2) NOT NULL,
+
+    TotalVenta DECIMAL(10,2),
+
+    IdImportacion INT NOT NULL,
+
+    CONSTRAINT FK_Ventas_Producto
+        FOREIGN KEY (IdProducto)
+        REFERENCES Productos(IdProducto),
+
+    CONSTRAINT FK_Ventas_Importacion
+        FOREIGN KEY (IdImportacion)
+        REFERENCES Importaciones(IdImportacion)
+);
+
+CREATE TABLE Inventarios (
+    IdInventario SERIAL PRIMARY KEY,
+
+    IdProducto INT NOT NULL,
+
+    Existencia NUMERIC(10,2) NOT NULL,
+
+    IdImportacion INT NOT NULL,
+
+    CONSTRAINT FK_Inventarios_Producto
+        FOREIGN KEY (IdProducto)
+        REFERENCES Productos(IdProducto),
+
+    CONSTRAINT FK_Inventarios_Importacion
+        FOREIGN KEY (IdImportacion)
+        REFERENCES Importaciones(IdImportacion)
+);
+
+CREATE TABLE Pedidos (
+    IdPedido SERIAL PRIMARY KEY,
+
+    IdProveedor INT NOT NULL,
+
+    FechaPedido DATE NOT NULL,
+
+    FechaEntrega DATE,
+
+    Estado VARCHAR(20) NOT NULL,
+
+    Observaciones TEXT,
+
+    CONSTRAINT FK_Pedidos_Proveedor
+        FOREIGN KEY (IdProveedor)
+        REFERENCES Proveedores(IdProveedor)
+);
+
+CREATE TABLE PedidoDetalle (
+    IdDetalle SERIAL PRIMARY KEY,
+
+    IdPedido INT NOT NULL,
+
+    IdProducto INT NOT NULL,
+
+    CantidadSugerida NUMERIC(10,2) NOT NULL,
+
+    CantidadPedida NUMERIC(10,2),
+
+    CostoUnitario DECIMAL(10,2),
+
+    CONSTRAINT FK_Detalle_Pedido
+        FOREIGN KEY (IdPedido)
+        REFERENCES Pedidos(IdPedido),
+
+    CONSTRAINT FK_Detalle_Producto
+        FOREIGN KEY (IdProducto)
+        REFERENCES Productos(IdProducto)
+);
