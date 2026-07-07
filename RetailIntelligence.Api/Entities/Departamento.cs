@@ -11,4 +11,6 @@ public class Departamento
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+
+    public ICollection<Producto> Productos { get; set; } = new List<Producto>();
 }

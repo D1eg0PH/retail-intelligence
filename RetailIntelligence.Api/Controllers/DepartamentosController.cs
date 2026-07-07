@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using RetailIntelligence.Api.Data;
-using RetailIntelligence.Api.DTOs;
+using RetailIntelligence.Api.Interfaces;
 
 namespace RetailIntelligence.Api.Controllers;
 
@@ -9,25 +7,16 @@ namespace RetailIntelligence.Api.Controllers;
 [Route("api/[controller]")]
 public class DepartamentosController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly IDepartamentoService _departamentoService;
 
-    public DepartamentosController(AppDbContext context)
+    public DepartamentosController(IDepartamentoService departamentoService)
     {
-        _context = context;
+        _departamentoService = departamentoService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var departamentos = await _context.Departamentos
-            .OrderBy(d => d.Nombre)
-            .Select(d => new DepartamentoDto
-            {
-                Id = d.IdDepartamento,
-                Nombre = d.Nombre
-            })
-            .ToListAsync();
-
-        return Ok(departamentos);
+        return Ok(await _departamentoService.GetAllAsync());
     }
 }

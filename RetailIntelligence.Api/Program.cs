@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
 
+using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -12,6 +15,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddScoped<IDepartamentoService, DepartamentoService>();
 
 var app = builder.Build();
 
