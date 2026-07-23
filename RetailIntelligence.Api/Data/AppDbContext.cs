@@ -108,10 +108,6 @@ public class AppDbContext : DbContext
         .HasColumnName("activo");
 
         modelBuilder.Entity<Producto>()
-            .Property(p => p.CodigoBarras)
-            .HasColumnName("codigo_barras");
-
-        modelBuilder.Entity<Producto>()
             .Property(p => p.CostoActual)
             .HasColumnName("costo_actual");
 

@@ -1,9 +1,8 @@
-
 using Microsoft.AspNetCore.Mvc;
 using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.Dtos;
+
 namespace RetailIntelligence.Api.Controllers;
-
-
 
 [ApiController]
 [Route("api/pedidos")]
@@ -62,4 +61,46 @@ public class PedidoController : ControllerBase
 
         return Ok();
     }
+
+    [HttpPost("{idPedido}/productos/{idProducto}")]
+    public async Task<IActionResult>AgregarProducto(int idPedido, int idProducto)
+    {
+        await _pedidoService.AgregarProductoAsync(idPedido,idProducto);
+
+        return Ok();
+    }
+
+    [HttpPost("quitar")]
+    public async Task<IActionResult>QuitarProductos(
+    [FromBody] List<int> detalles)
+    {
+        await _pedidoService
+            .QuitarProductosAsync(
+                detalles);
+
+        return Ok();
+    }
+
+
+    [HttpGet("{id}/excel")]
+    public async Task<IActionResult> ExportExcel(
+    int id,
+    [FromServices] IExcelExportService excelService)
+    {
+        var archivo = await excelService.ExportPedidoAsync(id);
+
+        return File(
+            archivo,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"Pedido_{id}.xlsx");
+    }
+
+    [HttpPut("{id}/cantidades")]
+    public async Task<IActionResult> ActualizarCantidades(int id,[FromBody] List<ActualizarCantidadesDto> cantidades)
+    {
+        await _pedidoService.ActualizarCantidadesAsync(id,cantidades);
+
+        return NoContent();
+    }
 }
+

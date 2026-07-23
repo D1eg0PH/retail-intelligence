@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.Dtos;
+
 namespace RetailIntelligence.Api.Services;
 
 public class PedidoService : IPedidoService
@@ -178,7 +180,6 @@ public class PedidoService : IPedidoService
 
     //METODO API PARA OBTENER PEDIDOS
 
-
     public async Task<List<object>> GetPedidosAsync()
     {
         return await _context.Pedidos.Select(p => new
@@ -287,6 +288,104 @@ public class PedidoService : IPedidoService
         detalle.CantidadPedida = cantidad;
 
         detalle.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task AgregarProductoAsync(int idPedido,int idProducto)
+    {
+        var pedido = await _context.Pedidos
+            .FirstOrDefaultAsync(
+                p => p.IdPedido == idPedido);
+
+        if (pedido == null)
+        {
+            throw new Exception(
+                "Pedido no encontrado.");
+        }
+
+        var producto = await _context.Productos
+            .FirstOrDefaultAsync(
+                p => p.IdProducto == idProducto);
+
+        if (producto == null)
+        {
+            throw new Exception(
+                "Producto no encontrado.");
+        }
+
+        var yaExiste = await _context.PedidoDetalles
+            .AnyAsync(d =>
+                d.IdPedido == idPedido &&
+                d.IdProducto == idProducto);
+
+        if (yaExiste)
+        {
+            throw new Exception(
+                "El producto ya está agregado.");
+        }
+
+        var detalle = new PedidoDetalle
+        {
+            IdPedido = idPedido,
+            IdProducto = idProducto,
+
+            CantidadSugerida = 0,
+
+            // por comodidad iniciamos con 1
+            CantidadPedida = 1,
+
+            CostoUnitario =
+                producto.CostoActual,
+
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.PedidoDetalles.Add(
+            detalle);
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task QuitarProductosAsync(List<int> detalles)
+    {
+        var registros = await _context.PedidoDetalles.Where(d => detalles.Contains(d.IdDetalle)).ToListAsync();
+
+        foreach (var detalle in registros)
+        {
+            // Producto agregado manualmente
+            if (detalle.CantidadSugerida == 0)
+            {
+                _context.PedidoDetalles.Remove(
+                    detalle);
+
+                continue;
+            }
+
+            // Producto sugerido por el sistema
+            detalle.CantidadPedida = 0;
+            detalle.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task ActualizarCantidadesAsync(int idPedido,List<ActualizarCantidadesDto> cantidades)
+    {
+        var detalles = await _context.PedidoDetalles.Where(x => x.IdPedido == idPedido).ToListAsync();
+
+        foreach (var detalle in detalles)
+        {
+            var dto = cantidades.FirstOrDefault(
+                x => x.IdDetalle == detalle.IdDetalle);
+
+            if (dto != null)
+            {
+                detalle.CantidadPedida = dto.CantidadPedida;
+                detalle.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         await _context.SaveChangesAsync();
     }

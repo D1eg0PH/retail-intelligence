@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ImportacionesPage from "./pages/ImportacionesPage";
 import PedidosPage from "./pages/PedidosPage";
 import PedidoDetallePage from "./pages/PedidoDetallePage";
+import BarcodePage from "./pages/BarcodePage";
+
 
 function App() {
     return (
@@ -21,6 +23,11 @@ function App() {
                 <Route
                     path="/pedidos/:id"
                     element={<PedidoDetallePage />}
+                />
+
+                <Route
+                    path="/barcodes"
+                    element={<BarcodePage />}
                 />
             </Routes>
         </BrowserRouter>

@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
-using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Interfaces;
 
 namespace RetailIntelligence.Api.Services;

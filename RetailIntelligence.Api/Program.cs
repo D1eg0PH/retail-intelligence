@@ -34,6 +34,9 @@ builder.Services.AddScoped<IImportService, ImportService>();
 builder.Services.AddScoped<IProductoService, ProductoService>();
 builder.Services.AddScoped<IPedidoService, PedidoService>();
 
+
+builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
+
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

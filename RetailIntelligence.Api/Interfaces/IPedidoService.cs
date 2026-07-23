@@ -1,3 +1,5 @@
+using RetailIntelligence.Api.Dtos;
+
 namespace RetailIntelligence.Api.Interfaces;
 
 public interface IPedidoService
@@ -15,4 +17,15 @@ public interface IPedidoService
     Task ActualizarCantidadAsync(
         int idDetalle,
         decimal cantidad);
+
+    Task ActualizarCantidadesAsync(
+        int idPedido,
+        List<ActualizarCantidadesDto> cantidades);
+
+    Task AgregarProductoAsync(
+        int idPedido,
+        int idProducto);
+
+    Task QuitarProductosAsync(
+        List<int> detalles);
 }

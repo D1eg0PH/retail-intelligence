@@ -10,8 +10,6 @@ public class Producto
 
     public string Codigo { get; set; } = string.Empty;
 
-    public string? CodigoBarras { get; set; }
-
     public string Nombre { get; set; } = string.Empty;
 
     public bool Activo { get; set; }
