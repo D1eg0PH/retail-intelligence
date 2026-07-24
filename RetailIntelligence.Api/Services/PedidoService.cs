@@ -3,6 +3,7 @@ using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Interfaces;
 using RetailIntelligence.Api.Dtos;
+using RetailIntelligence.Api.Dtos.Pedido;
 
 namespace RetailIntelligence.Api.Services;
 
@@ -181,79 +182,91 @@ public class PedidoService : IPedidoService
 
     //METODO API PARA OBTENER PEDIDOS
 
-    public async Task<List<object>> GetPedidosAsync()
+    public async Task<List<PedidoDto>> GetPedidosAsync()
     {
-        return await _context.Pedidos.Select(p => new
-            {
-                p.IdPedido,
-                Proveedor = p.Proveedor.Nombre,
-                Estado = p.Estado.Nombre,
-                p.FechaPedido,
-
-                Productos = p.PedidoDetalles.Count(),
-
-                MontoEstimado = p.PedidoDetalles.Sum(
-                    d => d.CantidadSugerida * d.CostoUnitario)
-            }).Cast<object>().ToListAsync();
+            return await _context.Pedidos
+        .Select(p => new PedidoDto
+        {
+            IdPedido = p.IdPedido,
+            Proveedor = p.Proveedor.Nombre,
+            Estado = p.Estado.Nombre,
+            FechaPedido = p.FechaPedido,
+            Productos = p.PedidoDetalles.Count(),
+            MontoEstimado = p.PedidoDetalles.Sum(
+                d => d.CantidadSugerida * d.CostoUnitario)
+        })
+        .ToListAsync();
     }
 
-    public async Task<object?> GetPedidoAsync(int id)
+    public async Task<PedidoCompletoDto?> GetPedidoAsync(int id)
     {
-        return await _context.Pedidos.Where(p => p.IdPedido == id).Select(p => new
+        return await _context.Pedidos
+            .Where(p => p.IdPedido == id)
+            .Select(p => new PedidoCompletoDto
             {
-                p.IdPedido,
+                IdPedido = p.IdPedido,
 
                 Proveedor = p.Proveedor.Nombre,
 
                 Estado = p.Estado.Nombre,
 
-                p.FechaPedido,
+                FechaPedido = p.FechaPedido,
 
-            Detalles = p.PedidoDetalles.Select(d => new
-            {
-                d.IdDetalle,
+                Detalles = p.PedidoDetalles
+                    .Select(d => new PedidoDetalleDto
+                    {
+                        IdDetalle = d.IdDetalle,
 
-                Producto = d.Producto.Nombre,
+                        Producto = d.Producto.Nombre,
 
-                Existencia =_context.Inventarios.Where(i => i.IdProducto == d.IdProducto).Sum(i => (decimal?)i.Existencia) ?? 0,
+                        Existencia = _context.Inventarios
+                            .Where(i => i.IdProducto == d.IdProducto)
+                            .Sum(i => (decimal?)i.Existencia) ?? 0,
 
-                VendidoPeriodo =_context.VentasPeriodo.Where(v => v.IdProducto == d.IdProducto).Sum(v => (decimal?)v.CantidadVendida) ?? 0,
+                        VendidoPeriodo = _context.VentasPeriodo
+                            .Where(v => v.IdProducto == d.IdProducto)
+                            .Sum(v => (decimal?)v.CantidadVendida) ?? 0,
 
-                d.CantidadSugerida,
+                        CantidadSugerida = d.CantidadSugerida,
 
-                d.CantidadPedida,
+                        CantidadPedida = d.CantidadPedida,
 
-                d.CostoUnitario,
+                        CostoUnitario = d.CostoUnitario,
 
-                Subtotal =
-             (
-                 d.CantidadPedida ??
-                 d.CantidadSugerida
-             ) * d.CostoUnitario
-            }),
+                        Subtotal =
+                            (d.CantidadPedida ?? d.CantidadSugerida)
+                            * d.CostoUnitario
+                    })
+                    .ToList(),
 
-            ProductosDisponibles = _context.Productos.Where(prod => prod.IdProveedor == p.IdProveedor && !p.PedidoDetalles.Select(d => d.IdProducto).Contains(prod.IdProducto)).Select(prod => new
-                {
-                    prod.IdProducto,
-                    prod.Nombre,
+                ProductosDisponibles = _context.Productos
+                    .Where(prod =>
+                        prod.IdProveedor == p.IdProveedor &&
+                        !p.PedidoDetalles
+                            .Select(d => d.IdProducto)
+                            .Contains(prod.IdProducto))
+                    .Select(prod => new ProductoDisponibleDto
+                    {
+                        IdProducto = prod.IdProducto,
 
-                    Existencia = _context.Inventarios.Where(i => i.IdProducto == prod.IdProducto).Sum(i => (decimal?)i.Existencia) ?? 0,
+                        Nombre = prod.Nombre,
 
-                    VendidoPeriodo = _context.VentasPeriodo.Where(v => v.IdProducto == prod.IdProducto).Sum(v => (decimal?)v.CantidadVendida) ?? 0,
+                        Existencia = _context.Inventarios
+                            .Where(i => i.IdProducto == prod.IdProducto)
+                            .Sum(i => (decimal?)i.Existencia) ?? 0,
 
-                    prod.CostoActual
-                })
-                .ToList(),
+                        VendidoPeriodo = _context.VentasPeriodo
+                            .Where(v => v.IdProducto == prod.IdProducto)
+                            .Sum(v => (decimal?)v.CantidadVendida) ?? 0,
 
-            MontoTotal = p.PedidoDetalles.Sum(
-            d =>
-                (
-                    d.CantidadPedida ??
-                    d.CantidadSugerida
-                ) *
-                d.CostoUnitario)
+                        CostoActual = prod.CostoActual
+                    })
+                    .ToList(),
 
-        })
+                MontoTotal = p.PedidoDetalles.Sum(d =>
+                    (d.CantidadPedida ?? d.CantidadSugerida)
+                    * d.CostoUnitario)
+            })
             .FirstOrDefaultAsync();
     }
 

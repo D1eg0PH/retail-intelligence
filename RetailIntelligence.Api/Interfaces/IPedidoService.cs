@@ -1,4 +1,5 @@
 using RetailIntelligence.Api.Dtos;
+using RetailIntelligence.Api.Dtos.Pedido;
 
 namespace RetailIntelligence.Api.Interfaces;
 
@@ -6,9 +7,11 @@ public interface IPedidoService
 {
     Task GenerarPedidosAsync();
 
-    Task<List<object>> GetPedidosAsync();
+    Task<List<PedidoDto>> GetPedidosAsync();
 
-    Task<object?> GetPedidoAsync(int id);
+    Task<PedidoCompletoDto?> GetPedidoAsync(int id);
+
+
 
     Task CambiarEstadoAsync(
         int idPedido,
