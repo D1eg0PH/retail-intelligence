@@ -40,6 +40,7 @@ builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
 
 var app = builder.Build();
 

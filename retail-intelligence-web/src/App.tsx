@@ -6,6 +6,7 @@ import ImportacionesPage from "./pages/ImportacionesPage";
 import PedidosPage from "./pages/PedidosPage";
 import PedidoDetallePage from "./pages/PedidoDetallePage";
 import BarcodePage from "./pages/BarcodePage";
+import ConfiguracionPage from "./pages/ConfiguracionPage";
 
 function App() {
     return (
@@ -32,6 +33,10 @@ function App() {
                     <Route
                         path="/barcodes"
                         element={<BarcodePage />}
+                    />
+                    <Route
+                        path="/configuracion"
+                        element={<ConfiguracionPage />}
                     />
 
                 </Route>

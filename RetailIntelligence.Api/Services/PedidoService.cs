@@ -20,6 +20,7 @@ public class PedidoService : IPedidoService
     public async Task GenerarPedidosAsync()
     {
 
+
         await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidodetalle RESTART IDENTITY CASCADE");
 
         await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidos RESTART IDENTITY CASCADE");
@@ -34,17 +35,17 @@ public class PedidoService : IPedidoService
         }
 
         Console.WriteLine($"Inventario utilizado: {importacionInventario.IdImportacion}");
-        Console.WriteLine(
-            $"Inventario utilizado: {importacionInventario.IdImportacion}");
-
 
         var importacionVentas = await _context.Importaciones
             .FirstOrDefaultAsync(i => i.TipoArchivo == "VENTAS_PERIODO");
 
-        if (importacionVentas == null)
-        {
-            throw new Exception("No existe ninguna importación de ventas.");
-        }
+        var configuracion = await _context.ConfiguracionSistema
+            .SingleAsync();
+
+        var factorColchon = 1 + (configuracion.PorcentajeColchon / 100m);
+
+        Console.WriteLine(
+            $"Colchón configurado: {configuracion.PorcentajeColchon}%");
 
 
 
@@ -81,10 +82,10 @@ public class PedidoService : IPedidoService
         int productosConPedido = 0;
 
         foreach (var venta in ventasPorProducto)
-        {   
+        {
             var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
 
-            var stockObjetivo = promedioSemanal * 1.55m;
+            var stockObjetivo = promedioSemanal * factorColchon;
 
             var existenciaActual = inventarioActual.GetValueOrDefault(venta.IdProducto,0);
 
