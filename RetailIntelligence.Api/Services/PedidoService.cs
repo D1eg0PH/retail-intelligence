@@ -16,15 +16,242 @@ public class PedidoService : IPedidoService
         _context = context;
     }
 
+    private async Task LimpiarPedidos()
+    {
+        await _context.Database.ExecuteSqlRawAsync(
+            "TRUNCATE TABLE pedidodetalle RESTART IDENTITY CASCADE");
 
-    // METODO PARA GENERAR PEDIDOS
+        await _context.Database.ExecuteSqlRawAsync(
+            "TRUNCATE TABLE pedidos RESTART IDENTITY CASCADE");
+    }
+
     public async Task GenerarPedidosAsync()
     {
+        await LimpiarPedidos();
+
+        var importacionInventario =
+            await ObtenerUltimaImportacionInventario();
+
+        var importacionVentas =
+            await ObtenerUltimaImportacionVentas();
+
+        var ventasPorProducto =
+            await ObtenerVentasPorProducto(importacionVentas);
+
+        var inventarioActual =
+            await ObtenerInventarioActual(importacionInventario);
+
+        await CrearPedidos(
+            ventasPorProducto,
+            inventarioActual);
+    }
+
+    private async Task<Importacion> ObtenerUltimaImportacionInventario()
+    {
+        var importacion = await _context.Importaciones
+            .Where(i => i.TipoArchivo == "INVENTARIO")
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (importacion == null)
+        {
+            throw new Exception(
+                "No existe ninguna importación de inventario.");
+        }
+
+        return importacion;
+    }
+
+    private async Task<List<VentaProductoDto>> ObtenerVentasPorProducto(
+    Importacion importacionVentas)
+    {
+        var ventas = await _context.VentasPeriodo
+            .Where(v => v.IdImportacion == importacionVentas.IdImportacion)
+            .GroupBy(v => v.IdProducto)
+            .Select(g => new VentaProductoDto
+            {
+                IdProducto = g.Key,
+                CantidadVendida = g.Sum(x => x.CantidadVendida)
+            })
+            .ToListAsync();
+
+        Console.WriteLine($"Productos con ventas: {ventas.Count}");
+
+        return ventas;
+    }
+
+    private async Task<Importacion> ObtenerUltimaImportacionVentas()
+    {
+        var importacion = await _context.Importaciones
+            .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (importacion == null)
+        {
+            throw new Exception(
+                "No existe ninguna importación de ventas.");
+        }
+
+        return importacion;
+    }
+
+    private async Task<Dictionary<int, decimal>> ObtenerInventarioActual(
+    Importacion importacionInventario)
+    {
+        return await _context.Inventarios
+            .Where(i =>
+                i.IdImportacion == importacionInventario.IdImportacion)
+            .GroupBy(i => i.IdProducto)
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.Sum(x => x.Existencia));
+    }
+
+    private async Task CrearPedidos(
+    List<VentaProductoDto> ventasPorProducto,
+    Dictionary<int, decimal> inventarioActual)
+    {
+        var configuracion = await _context.ConfiguracionSistema
+    .SingleAsync();
+
+        var factorColchon =
+            1 + (configuracion.PorcentajeColchon / 100m);
+
+        Console.WriteLine(
+            $"Colchón configurado: {configuracion.PorcentajeColchon}%");
+
+        var importacionVentas =
+    await ObtenerUltimaImportacionVentas();
+
+        var diasPeriodo = Math.Max(
+            1,
+            importacionVentas.FechaFinPeriodo.DayNumber -
+            importacionVentas.FechaInicioPeriodo.DayNumber + 1);
+
+        var semanasPeriodo =
+            Math.Max(1m, diasPeriodo / 7m);
+
+        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
+
+        var pedidosPorProveedor =
+    new Dictionary<int, Pedido>();
+
+        var productos =
+            await _context.Productos.ToDictionaryAsync(
+                p => p.IdProducto,
+                p => p);
+
+        int productosConPedido = 0;
+
+        foreach (var venta in ventasPorProducto)
+        {
+            var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
+
+            var stockObjetivo = promedioSemanal * factorColchon;
+
+            var existenciaActual = inventarioActual.GetValueOrDefault(
+                venta.IdProducto,
+                0);
+
+            var pedidoSugerido =
+                Math.Ceiling(stockObjetivo - existenciaActual);
+
+            pedidoSugerido = Math.Max(0, pedidoSugerido);
+
+            if (!productos.TryGetValue(
+                venta.IdProducto,
+                out var producto))
+            {
+                continue;
+            }
+
+            Console.WriteLine(
+                $"{producto.Nombre,-40}" +
+                $" Vendido:{venta.CantidadVendida,-5}" +
+                $" Exist:{existenciaActual,-5}" +
+                $" Objetivo:{stockObjetivo,-8:F2}" +
+                $" Pedido:{pedidoSugerido}");
+
+            if (pedidoSugerido <= 0)
+            {
+                continue;
+            }
+
+            if (producto.IdProveedor == 3)
+            {
+                continue;
+            }
+
+            productosConPedido++;
+
+            Console.ForegroundColor = ConsoleColor.Green;
+
+            Console.WriteLine(
+                $"PEDIDO -> {producto.Nombre} | " +
+                $"Proveedor:{producto.IdProveedor} | " +
+                $"Pedido:{pedidoSugerido}");
+
+            Console.ResetColor();
+
+            if (!pedidosPorProveedor.ContainsKey(producto.IdProveedor))
+            {
+                var pedido = new Pedido
+                {
+                    IdProveedor = producto.IdProveedor,
+                    IdEstado = 1,
+                    FechaPedido = DateOnly.FromDateTime(DateTime.Today),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.Pedidos.Add(pedido);
+
+                await _context.SaveChangesAsync();
+
+                pedidosPorProveedor.Add(
+                    producto.IdProveedor,
+                    pedido);
+            }
+
+            var pedidoProveedor =
+                pedidosPorProveedor[producto.IdProveedor];
+
+            var detalle = new PedidoDetalle
+            {
+                IdPedido = pedidoProveedor.IdPedido,
+                IdProducto = producto.IdProducto,
+                CantidadSugerida = pedidoSugerido,
+                CantidadPedida = null,
+                CostoUnitario = producto.CostoActual,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.PedidoDetalles.Add(detalle);
+        }
+
+        await _context.SaveChangesAsync();
+
+        Console.WriteLine();
+        Console.WriteLine("=================================");
+        Console.WriteLine($"Productos a pedir: {productosConPedido}");
+        Console.WriteLine($"Proveedores: {pedidosPorProveedor.Count}");
+        Console.WriteLine("=================================");
+
+        Console.WriteLine($"Ventas utilizadas: {importacionVentas.IdImportacion}");
+        Console.WriteLine($"Fecha inicio: {importacionVentas.FechaInicioPeriodo}");
+        Console.WriteLine($"Fecha fin: {importacionVentas.FechaFinPeriodo}");
+        Console.WriteLine($"Dias periodo: {diasPeriodo}");
+        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
+    }
 
 
-        await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidodetalle RESTART IDENTITY CASCADE");
+    // METODO PARA GENERAR PEDIDOS
 
-        await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidos RESTART IDENTITY CASCADE");
+    /*public async Task GenerarPedidosAsync()
+    {
+        await LimpiarPedidos();
 
         var importacionInventario = await _context.Importaciones
             .FirstOrDefaultAsync(i => i.TipoArchivo == "INVENTARIO");
@@ -179,6 +406,9 @@ public class PedidoService : IPedidoService
 
         Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
     }
+    
+    */
+
 
     //METODO API PARA OBTENER PEDIDOS
 
