@@ -84,7 +84,7 @@ public class PedidoService : IPedidoService
         {   
             var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
 
-            var stockObjetivo = promedioSemanal * 1.20m;
+            var stockObjetivo = promedioSemanal * 1.55m;
 
             var existenciaActual = inventarioActual.GetValueOrDefault(venta.IdProducto,0);
 

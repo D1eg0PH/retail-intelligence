@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {getPedido,agregarProducto,quitarProductos,guardarCantidades,exportarPedidoExcel} from "../services/pedidoService";
+import { FileSpreadsheet } from "lucide-react";
 
 
 export default function PedidoDetallePage() {
@@ -83,13 +84,12 @@ export default function PedidoDetallePage() {
 
             await cargarPedido();
 
-            alert("Cambios guardados correctamente.");
-
+            toast.success("Cambios guardados correctamente");
         } catch (error) {
 
             console.error(error);
 
-            alert("Ocurrió un error al guardar.");
+            toast.error("Ocurrió un error");
         }
     };
 
@@ -122,7 +122,7 @@ export default function PedidoDetallePage() {
 
             console.error(error);
 
-            alert("No fue posible descargar el pedido.");
+            toast.error("No fue posible descargar el pedido.");
         }
     };
 
@@ -483,17 +483,8 @@ export default function PedidoDetallePage() {
                         Guardar cambios
                     </button>
 
-                    <button
-                        onClick={descargarExcel}
-                        className="
-                            bg-blue-600
-                            text-white
-                            px-6
-                            py-3
-                            rounded-xl
-                            hover:bg-blue-700
-                        "
-                    >
+                     <button onClick={descargarExcel}className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700">
+                        <FileSpreadsheet size={18} />
                         Exportar Excel
                     </button>
 
