@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {getPedido,agregarProducto,quitarProductos,guardarCantidades,exportarPedidoExcel} from "../services/pedidoService";
 import { FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
 
 
 export default function PedidoDetallePage() {
