@@ -31,6 +31,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+
 // Registro de servicios
 builder.Services.AddScoped<IDepartamentoService, DepartamentoService>();
 builder.Services.AddScoped<IImportService, ImportService>();
@@ -46,6 +47,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
 
 var app = builder.Build();
+
+Console.WriteLine("========== CORS VERSION 3 ==========");
+Console.WriteLine(app.Environment.EnvironmentName);
+
 app.UseCors("ReactPolicy");
 
 
