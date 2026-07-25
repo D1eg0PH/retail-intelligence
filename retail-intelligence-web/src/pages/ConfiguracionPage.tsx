@@ -8,7 +8,7 @@ import {
     updateConfiguracion
 } from "../services/configuracionService";
 
-import PageHeader from "../components/ui/PageHeader";
+import PageHeader from "../components/ui/Pageheader";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
