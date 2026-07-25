@@ -18,16 +18,22 @@ builder.Services.AddControllers()
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSwaggerGen();
+
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173")
+            .WithOrigins(
+                "http://localhost:5173",
+                "https://TU-PROYECTO.vercel.app"
+            )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
+
 // Registro de servicios
 builder.Services.AddScoped<IDepartamentoService, DepartamentoService>();
 builder.Services.AddScoped<IImportService, ImportService>();
@@ -43,8 +49,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
 
 var app = builder.Build();
-
 app.UseCors("ReactPolicy");
+
 
 // Swagger en desarrollo
 if (app.Environment.IsDevelopment())
