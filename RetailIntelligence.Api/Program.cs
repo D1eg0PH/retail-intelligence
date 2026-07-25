@@ -22,7 +22,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("ReactPolicy", policy =>
     {
         policy
             .AllowAnyOrigin()
@@ -30,7 +30,6 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
-
 
 // Registro de servicios
 builder.Services.AddScoped<IDepartamentoService, DepartamentoService>();
