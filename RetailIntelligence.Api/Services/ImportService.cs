@@ -144,6 +144,7 @@ public class ImportService : IImportService
         {
             var codigo = row.Cell(1).GetString();
             var producto = row.Cell(2).GetString();
+            Console.WriteLine($"Fila {row.RowNumber()} | Costo='{row.Cell(3).GetString()}' | Tipo={row.Cell(3).DataType}");
             var costo = row.Cell(3).GetValue<decimal>();
             var precio = row.Cell(4).GetValue<decimal>();
             var existencia = row.Cell(6).GetValue<decimal>();
