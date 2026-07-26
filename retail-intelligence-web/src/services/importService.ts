@@ -21,17 +21,30 @@ export const importInventory = async (file: File) => {
 
 export const importSales = async (
     file: File,
-    fechaInicio: string,
-    fechaFin: string
+    diasPeriodo?: number,
+    fechaInicio?: string,
+    fechaFin?: string
 ) => {
 
     const formData = new FormData();
 
     formData.append("file", file);
 
+    if (diasPeriodo !== undefined) {
+        formData.append("diasPeriodo", diasPeriodo.toString());
+    } else {
+        if (fechaInicio) {
+            formData.append("fechaInicio", fechaInicio);
+        }
+
+        if (fechaFin) {
+            formData.append("fechaFin", fechaFin);
+        }
+    }
+
     const response = await api.post(
-    `/import/sales?fechaInicioPeriodo=${fechaInicio}&fechaFinPeriodo=${fechaFin}`,
-    formData,
+        "/import/sales",
+        formData,
         {
             headers: {
                 "Content-Type": "multipart/form-data"

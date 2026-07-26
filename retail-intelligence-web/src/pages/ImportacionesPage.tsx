@@ -21,6 +21,8 @@ export default function ImportacionesPage() {
     const [fechaFin, setFechaFin] =
         useState("");
 
+    const [diasPeriodo, setDiasPeriodo] = useState(30);
+
     const handleImportInventory = async () => {
 
         if (!inventoryFile) {
@@ -66,19 +68,12 @@ export default function ImportacionesPage() {
             return;
         }
 
-        if (!fechaInicio || !fechaFin) {
-            alert(
-                "Selecciona las fechas del periodo."
-            );
-            return;
-        }
 
         try {
 
-            await importSales(
+           await importSales(
                 salesFile,
-                fechaInicio,
-                fechaFin
+                diasPeriodo
             );
 
             alert(
@@ -242,40 +237,18 @@ export default function ImportacionesPage() {
                 </div>
 
                 {/* VENTAS */}
-                <div className="
-                    bg-white
-                    rounded-2xl
-                    shadow-md
-                    border
-                    border-gray-200
-                    p-6
-                ">
+                <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-6">
 
-                    <h2 className="
-                        text-2xl
-                        font-semibold
-                        mb-4
-                    ">
+                    <h2 className="text-2xl font-semibold mb-4">
                         Ventas
                     </h2>
 
-                    <p className="
-                        text-gray-500
-                        mb-4
-                    ">
+                    <p className="text-gray-500 mb-4">
                         Selecciona el archivo y el
                         periodo de ventas.
                     </p>
 
-                    <input
-                        type="file"
-                        className="
-                            w-full
-                            mb-4
-                            border
-                            rounded-lg
-                            p-2
-                        "
+                    <input type="file"className="w-full mb-4 border rounded-lg p-2"
                         onChange={(e) =>
                             setSalesFile(
                                 e.target.files?.[0] ??
@@ -284,100 +257,55 @@ export default function ImportacionesPage() {
                         }
                     />
 
-                    {
-                        salesFile && (
-                            <div className="
-                                bg-gray-50
-                                rounded-lg
-                                p-3
-                                mb-4
-                                border
-                            ">
-                                <p className="
-                                    text-sm
-                                    text-gray-600
-                                ">
-                                    Archivo seleccionado:
-                                </p>
+                  {
+                    salesFile && (
+                        <div className="bg-gray-50 rounded-lg p-3 mb-4 border">
+                            <p className="text-sm text-gray-600">
+                                Archivo seleccionado:
+                            </p>
 
-                                <p className="
-                                    font-medium
-                                    text-gray-800
-                                ">
-                                    {salesFile.name}
-                                </p>
-                            </div>
-                        )
+                            <p className="font-medium text-gray-800">
+                                {salesFile.name}
+                            </p>
+                        </div>
+                    )
+                }
+
+                <p className="text-sm text-gray-500 mb-2">
+                    Días del periodo de ventas
+                </p>
+
+                <input
+                    type="number"
+                    min={1}
+                    value={diasPeriodo}
+                    onChange={(e) =>
+                        setDiasPeriodo(Number(e.target.value))
                     }
+                    className="
+                        border
+                        p-3
+                        rounded-lg
+                        mb-6
+                        w-full
+                    "
+                />
 
-                    <p className="
-                        text-sm
-                        text-gray-500
-                        mb-2
-                    ">
-                        Fecha inicio del periodo
-                    </p>
-
-                    <input
-                        type="date"
-                        value={fechaInicio}
-                        onChange={(e) =>
-                            setFechaInicio(
-                                e.target.value
-                            )
-                        }
-                        className="
-                            border
-                            p-3
-                            rounded-lg
-                            mb-4
-                            w-full
-                        "
-                    />
-
-                    <p className="
-                        text-sm
-                        text-gray-500
-                        mb-2
-                    ">
-                        Fecha fin del periodo
-                    </p>
-
-                    <input
-                        type="date"
-                        value={fechaFin}
-                        onChange={(e) =>
-                            setFechaFin(
-                                e.target.value
-                            )
-                        }
-                        className="
-                            border
-                            p-3
-                            rounded-lg
-                            mb-6
-                            w-full
-                        "
-                    />
-
-                    <button
-                        onClick={
-                            handleImportSales
-                        }
-                        className="
-                            w-full
-                            bg-green-600
-                            hover:bg-green-700
-                            text-white
-                            py-3
-                            rounded-xl
-                            font-semibold
-                            transition
-                        "
-                    >
-                        Importar Ventas
-                    </button>
-
+                <button
+                    onClick={handleImportSales}
+                    className="
+                        w-full
+                        bg-green-600
+                        hover:bg-green-700
+                        text-white
+                        py-3
+                        rounded-xl
+                        font-semibold
+                        transition
+                    "
+                >
+                    Importar Ventas
+                </button>
                 </div>
 
             </div>
