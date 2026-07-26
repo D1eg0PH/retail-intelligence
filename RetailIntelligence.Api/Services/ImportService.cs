@@ -367,13 +367,13 @@ public class ImportService : IImportService
         {
             var codigo = row.Cell(1).GetString().Trim();
 
-            var cantidad = row.Cell(3).GetValue<decimal>();
+            var cantidad = LeerDecimal(row.Cell(3));
 
-            var precioUsado = row.Cell(4).GetValue<decimal>();
-
-            var precioCosto = row.Cell(5).GetValue<decimal>();
-
-            var importe = row.Cell(6).GetValue<decimal>();
+            var precioUsado = LeerDecimal(row.Cell(4));
+            
+            var precioCosto = LeerDecimal(row.Cell(5));
+            
+            var importe = LeerDecimal(row.Cell(6));
 
 
             // DEBUG TEMPORAL
