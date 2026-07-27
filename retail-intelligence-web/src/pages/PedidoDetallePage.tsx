@@ -15,7 +15,19 @@ export default function PedidoDetallePage() {
     
     const [seleccionados, setSeleccionados] = useState<number[]>([]);
 
+    const [busquedaProducto, setBusquedaProducto] = useState("");
     useEffect(() => {cargarPedido();}, []);
+
+    const productosDisponiblesFiltrados =
+    pedido.productosDisponibles.filter((producto: any) => {
+
+        const texto = busquedaProducto.toLowerCase();
+
+        return (
+            producto.nombre.toLowerCase().includes(texto) ||
+            producto.codigo.toString().includes(texto)
+        );
+    });
 
     const cargarPedido = async () => {
         try {
@@ -227,6 +239,28 @@ export default function PedidoDetallePage() {
 
                 </div>
 
+            </div>
+
+            {/* CUADRO DE BUSQUEDA */}
+            <div className="mb-4">
+                <input
+                    type="text"
+                    placeholder="Buscar producto por nombre o código..."
+                    value={busquedaProducto}
+                    onChange={(e) =>
+                        setBusquedaProducto(e.target.value)
+                    }
+                    className="
+                        w-full
+                        md:w-96
+                        border
+                        rounded-lg
+                        p-2
+                    "
+                />
+                <p className="text-sm text-gray-500 mb-2">
+                    {productosDisponiblesFiltrados.length} de {pedido.productosDisponibles.length} productos
+                </p>
             </div>
 
             {/* TABLA */}

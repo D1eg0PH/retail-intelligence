@@ -422,7 +422,19 @@ public class PedidoService : IPedidoService
         await _context.SaveChangesAsync();
     }
 
+
     public async Task QuitarProductosAsync(List<int> detalles)
+    {
+        var registros = await _context.PedidoDetalles
+            .Where(d => detalles.Contains(d.IdDetalle))
+            .ToListAsync();
+
+        _context.PedidoDetalles.RemoveRange(registros);
+
+        await _context.SaveChangesAsync();
+    }
+
+    /*public async Task QuitarProductosAsync(List<int> detalles)
     {
         var registros = await _context.PedidoDetalles.Where(d => detalles.Contains(d.IdDetalle)).ToListAsync();
 
@@ -443,7 +455,7 @@ public class PedidoService : IPedidoService
         }
 
         await _context.SaveChangesAsync();
-    }
+    }*/
 
     public async Task ActualizarCantidadesAsync(int idPedido,List<ActualizarCantidadesDto> cantidades)
     {
