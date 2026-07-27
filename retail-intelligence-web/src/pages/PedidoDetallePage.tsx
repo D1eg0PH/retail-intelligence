@@ -51,9 +51,10 @@ export default function PedidoDetallePage() {
     
 
     const quitarSeleccionados = async () => {
-        if (
-            seleccionados.length === 0
-        ) {
+        
+            console.log("Seleccionados:", seleccionados);
+
+        if (seleccionados.length === 0) {
             return;
         }
 
