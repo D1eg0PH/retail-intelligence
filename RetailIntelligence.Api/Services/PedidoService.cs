@@ -424,23 +424,11 @@ public class PedidoService : IPedidoService
 
     public async Task QuitarProductosAsync(List<int> detalles)
     {
-        var registros = await _context.PedidoDetalles.Where(d => detalles.Contains(d.IdDetalle)).ToListAsync();
+        var registros = await _context.PedidoDetalles
+            .Where(d => detalles.Contains(d.IdDetalle))
+            .ToListAsync();
 
-        foreach (var detalle in registros)
-        {
-            // Producto agregado manualmente
-            if (detalle.CantidadSugerida == 0)
-            {
-                _context.PedidoDetalles.Remove(
-                    detalle);
-
-                continue;
-            }
-
-            // Producto sugerido por el sistema
-            detalle.CantidadPedida = 0;
-            detalle.UpdatedAt = DateTime.UtcNow;
-        }
+        _context.PedidoDetalles.RemoveRange(registros);
 
         await _context.SaveChangesAsync();
     }
