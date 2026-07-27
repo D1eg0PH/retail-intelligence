@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.DTOs;
 
 namespace RetailIntelligence.Api.Controllers;
 
@@ -26,14 +27,9 @@ public class ImportController : ControllerBase
     }
 
     [HttpPost("sales")]
-    public async Task<IActionResult> ImportSales(IFormFile file,DateOnly fechaInicioPeriodo,DateOnly fechaFinPeriodo)
+    public async Task<IActionResult> ImportSales([FromForm] ImportSalesRequest request)
     {
-        if (fechaInicioPeriodo == default ||fechaFinPeriodo == default)
-        {
-            return BadRequest(
-                "Debe especificar el periodo de ventas.");
-        }
-        await _importService.ImportSalesAsync(file,fechaInicioPeriodo,fechaFinPeriodo);
+        await _importService.ImportSalesAsync(request);
 
         return Ok();
     }

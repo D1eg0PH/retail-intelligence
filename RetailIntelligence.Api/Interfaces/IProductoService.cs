@@ -1,8 +1,9 @@
-using RetailIntelligence.Api.Entities;
+
+using RetailIntelligence.Api.Dtos.Producto;
 
 namespace RetailIntelligence.Api.Interfaces;
 
 public interface IProductoService
 {
-    Task<List<object>> GetAllAsync();
+    Task<List<ProductoDto>> GetAllAsync();
 }

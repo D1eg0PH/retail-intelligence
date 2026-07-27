@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Interfaces;
 using RetailIntelligence.Api.Entities;
+using RetailIntelligence.Api.DTOs;
+using System.Globalization;
 
 
 namespace RetailIntelligence.Api.Services;
@@ -17,6 +19,32 @@ public class ImportService : IImportService
     {
         _context = context;
     }
+
+    private static decimal LeerDecimal(IXLCell cell)
+    {
+        if (cell.DataType == XLDataType.Number)
+        {
+            return cell.GetValue<decimal>();
+        }
+
+        var texto = cell.GetString()
+            .Replace("$", "")
+            .Replace(",", "")
+            .Trim();
+
+        if (decimal.TryParse(
+            texto,
+            NumberStyles.Any,
+            CultureInfo.InvariantCulture,
+            out var valor))
+        {
+            return valor;
+        }
+
+        throw new Exception(
+            $"No fue posible convertir el valor '{cell.GetString()}' de la celda {cell.Address} a decimal.");
+    }
+
 
     // IMPORTAR INVENTARIO, PRODUCTOS, PROVEEDORES
 
@@ -43,17 +71,17 @@ public class ImportService : IImportService
 
         // Encabezados que esperamos recibir desde Eleventa
         var expectedHeaders = new List<string>
-        {
-            "Código",
-            "Producto",
-            "P. Costo",
-            "P. Venta",
-            "P. Mayoreo",
-            "Existencia",
-            "Inv. Mínimo",
-            "Inv. Máximo",
-            "Departamento"
-        };
+            {
+                "Código",
+                "Producto",
+                "P. Costo",
+                "P. Venta",
+                "P. Mayoreo",
+                "Existencia",
+                "Inv. Mínimo",
+                "Inv. Máximo",
+                "Departamento"
+            };
 
         // Leer encabezados reales del Excel
         var actualHeaders = worksheet.Row(1).CellsUsed()
@@ -144,11 +172,12 @@ public class ImportService : IImportService
         {
             var codigo = row.Cell(1).GetString();
             var producto = row.Cell(2).GetString();
-            var costo = row.Cell(3).GetValue<decimal>();
-            var precio = row.Cell(4).GetValue<decimal>();
-            var existencia = row.Cell(6).GetValue<decimal>();
-            var stockMinimoExcel = row.Cell(7).GetValue<decimal>();
-            var stockMaximoExcel = row.Cell(8).GetValue<decimal>();
+            Console.WriteLine($"Fila {row.RowNumber()} | Costo='{row.Cell(3).GetString()}' | Tipo={row.Cell(3).DataType}");
+            var costo = LeerDecimal(row.Cell(3));
+            var precio = LeerDecimal(row.Cell(4));
+            var existencia = LeerDecimal(row.Cell(6));
+            var stockMinimoExcel = LeerDecimal(row.Cell(7));
+            var stockMaximoExcel = LeerDecimal(row.Cell(8));
             //var departamento = row.Cell(9).GetString().Trim();
             var proveedor = row.Cell(9).GetString().Trim();
             if (stockMaximoExcel < stockMinimoExcel)
@@ -241,36 +270,57 @@ public class ImportService : IImportService
     }
 
 
+
+
+
     // IMPORTAR VENTAS POR PERIODO
-    public async Task ImportSalesAsync(IFormFile file,DateOnly fechaInicio,DateOnly fechaFin)
+    public async Task ImportSalesAsync(ImportSalesRequest request)
     {
 
-        if (fechaInicio == default || fechaFin == default)
+        if (request.DiasPeriodo.HasValue && (request.FechaInicio.HasValue || request.FechaFin.HasValue))
         {
-            throw new Exception("Periodo de ventas inválido.");
+            throw new Exception("Debe seleccionar un solo tipo de período: días o rango de fechas.");
         }
 
-        if (fechaInicio > fechaFin)
+        DateOnly fechaInicio;
+        DateOnly fechaFin;
+
+        if (request.DiasPeriodo.HasValue)
         {
-            throw new Exception("La fecha inicial no puede ser mayor a la fecha final.");
+            if (request.DiasPeriodo.Value <= 0)
+                throw new Exception("Los días del período deben ser mayores a cero.");
+
+            fechaFin = DateOnly.FromDateTime(DateTime.Today);
+            fechaInicio = fechaFin.AddDays(-(request.DiasPeriodo.Value - 1));
+        }
+        else
+        {
+            if (!request.FechaInicio.HasValue || !request.FechaFin.HasValue)
+                throw new Exception("Debe indicar un período de ventas.");
+
+            fechaInicio = request.FechaInicio.Value;
+            fechaFin = request.FechaFin.Value;
+
+            if (fechaInicio > fechaFin)
+                throw new Exception("La fecha inicial no puede ser mayor que la final.");
         }
 
-        using var stream = file.OpenReadStream();
+        using var stream = request.File.OpenReadStream();
 
         using var workbook = new XLWorkbook(stream);
 
         var worksheet = workbook.Worksheet(1);
 
         var expectedHeaders = new List<string>
-            {
-                "Código",
-                "Descripción",
-                "Cantidad",
-                "Precio Usado",
-                "Precio Costo",
-                "Importe",
-                "Departamento"
-            };
+                    {
+                        "Código",
+                        "Descripción",
+                        "Cantidad",
+                        "Precio Usado",
+                        "Precio Costo",
+                        "Importe",
+                        "Departamento"
+                    };
 
         var actualHeaders = worksheet.Row(1).CellsUsed().Select(c => c.GetString().Trim()).ToList();
 
@@ -299,7 +349,7 @@ public class ImportService : IImportService
         var importacion = new Importacion
         {
             TipoArchivo = "VENTAS_PERIODO",
-            NombreArchivo = file.FileName,
+            NombreArchivo = request.File.FileName,
             FechaInicioPeriodo = fechaInicio,
             FechaFinPeriodo = fechaFin,
             HashArchivo = Guid.NewGuid().ToString(),
@@ -317,13 +367,13 @@ public class ImportService : IImportService
         {
             var codigo = row.Cell(1).GetString().Trim();
 
-            var cantidad = row.Cell(3).GetValue<decimal>();
+            var cantidad = LeerDecimal(row.Cell(3));
 
-            var precioUsado = row.Cell(4).GetValue<decimal>();
-
-            var precioCosto = row.Cell(5).GetValue<decimal>();
-
-            var importe = row.Cell(6).GetValue<decimal>();
+            var precioUsado = LeerDecimal(row.Cell(4));
+            
+            var precioCosto = LeerDecimal(row.Cell(5));
+            
+            var importe = LeerDecimal(row.Cell(6));
 
 
             // DEBUG TEMPORAL
@@ -370,4 +420,142 @@ public class ImportService : IImportService
             $"Ventas importadas correctamente: {rows.Count()}");
 
     }
+
 }
+
+
+   
+
+
+    /*
+        public async Task ImportSalesAsync(IFormFile file,DateOnly fechaInicio,DateOnly fechaFin)
+        {
+
+            if (fechaInicio == default || fechaFin == default)
+            {
+                throw new Exception("Periodo de ventas inválido.");
+            }
+
+            if (fechaInicio > fechaFin)
+            {
+                throw new Exception("La fecha inicial no puede ser mayor a la fecha final.");
+            }
+
+            using var stream = file.OpenReadStream();
+
+            using var workbook = new XLWorkbook(stream);
+
+            var worksheet = workbook.Worksheet(1);
+
+            var expectedHeaders = new List<string>
+                {
+                    "Código",
+                    "Descripción",
+                    "Cantidad",
+                    "Precio Usado",
+                    "Precio Costo",
+                    "Importe",
+                    "Departamento"
+                };
+
+            var actualHeaders = worksheet.Row(1).CellsUsed().Select(c => c.GetString().Trim()).ToList();
+
+            foreach (var expectedHeader in expectedHeaders)
+            {
+                if (!actualHeaders.Contains(expectedHeader))
+                {
+                    throw new Exception($"El archivo no contiene la columna requerida: {expectedHeader}");
+                }
+            }
+
+            Console.WriteLine("Encabezados válidos.");
+
+            var rows = worksheet.RowsUsed().Skip(1);
+
+            Console.WriteLine($"Registros encontrados: {rows.Count()}");
+
+
+            await _context.VentasPeriodo.ExecuteDeleteAsync();
+
+            await _context.Importaciones
+                .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
+                .ExecuteDeleteAsync();
+
+
+            var importacion = new Importacion
+            {
+                TipoArchivo = "VENTAS_PERIODO",
+                NombreArchivo = file.FileName,
+                FechaInicioPeriodo = fechaInicio,
+                FechaFinPeriodo = fechaFin,
+                HashArchivo = Guid.NewGuid().ToString(),
+                RegistrosImportados = rows.Count(),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.Importaciones.Add(importacion);
+
+            await _context.SaveChangesAsync();
+
+
+            foreach (var row in rows)
+            {
+                var codigo = row.Cell(1).GetString().Trim();
+
+                var cantidad = row.Cell(3).GetValue<decimal>();
+
+                var precioUsado = row.Cell(4).GetValue<decimal>();
+
+                var precioCosto = row.Cell(5).GetValue<decimal>();
+
+                var importe = row.Cell(6).GetValue<decimal>();
+
+
+                // DEBUG TEMPORAL
+                Console.WriteLine(
+                    $"COD:{codigo} | " +
+                    $"CANT:{cantidad} | " +
+                    $"PRECIO:{precioUsado} | " +
+                    $"IMPORTE:{importe}");
+
+                // Buscar producto previamente importado desde inventario
+                var producto = await _context.Productos.FirstOrDefaultAsync(p => p.Codigo == codigo);
+
+                if (producto == null)
+                {
+                    Console.WriteLine($"Producto no encontrado en catálogo: {codigo}");
+                    continue;
+                }
+
+                var venta = new VentaPeriodo
+                {
+                    IdProducto = producto.IdProducto,
+
+                    IdImportacion = importacion.IdImportacion,
+
+                    CantidadVendida = cantidad,
+
+                    PrecioUsado = precioUsado,
+
+                    PrecioCosto = precioCosto,
+
+                    Importe = importe,
+
+                    CreatedAt = DateTime.UtcNow,
+
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.VentasPeriodo.Add(venta);
+            }
+
+            await _context.SaveChangesAsync();
+
+            Console.WriteLine(
+                $"Ventas importadas correctamente: {rows.Count()}");
+
+        }
+
+    */
+ 

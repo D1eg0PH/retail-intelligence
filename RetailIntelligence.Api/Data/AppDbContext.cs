@@ -16,10 +16,15 @@ public class AppDbContext : DbContext
     // Entity Framework permitirá hacer consultas como:
     // _context.Departamentos.ToListAsync()
     public DbSet<Departamento> Departamentos => Set<Departamento>();
+    
     public DbSet<Producto> Productos => Set<Producto>();
+    
     public DbSet<Proveedor> Proveedores => Set<Proveedor>();
+    
     public DbSet<Importacion> Importaciones => Set<Importacion>();
+    
     public DbSet<Inventario> Inventarios => Set<Inventario>();
+    
     public DbSet<VentaPeriodo> VentasPeriodo => Set<VentaPeriodo>();
 
     public DbSet<Pedido> Pedidos => Set<Pedido>();
@@ -28,6 +33,7 @@ public class AppDbContext : DbContext
 
     public DbSet<EstadoPedido> EstadosPedido => Set<EstadoPedido>();
 
+    public DbSet<ConfiguracionSistema> ConfiguracionSistema => Set<ConfiguracionSistema>();
 
     // Más adelante agregaremos:
     // public DbSet<Producto> Productos => Set<Producto>();
@@ -106,10 +112,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Producto>()
         .Property(p => p.Activo)
         .HasColumnName("activo");
-
-        modelBuilder.Entity<Producto>()
-            .Property(p => p.CodigoBarras)
-            .HasColumnName("codigo_barras");
 
         modelBuilder.Entity<Producto>()
             .Property(p => p.CostoActual)
@@ -488,5 +490,47 @@ public class AppDbContext : DbContext
             .HasOne(pd => pd.Producto)
             .WithMany()
             .HasForeignKey(pd => pd.IdProducto);
+
+
+        // ======================================
+        // CONFIGURACIÓN DE CONFIGURACIÓN SISTEMA
+        // ======================================
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .ToTable("configuracionsistema");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .HasKey(c => c.IdConfiguracion);
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.IdConfiguracion)
+            .HasColumnName("id_configuracion");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.SemanasPromedio)
+            .HasColumnName("semanas_promedio");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.DiasInventarioObjetivo)
+            .HasColumnName("dias_inventario_objetivo");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.DiasProductoMuerto)
+            .HasColumnName("dias_producto_muerto");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.PorcentajeColchon)
+            .HasColumnName("porcentaje_colchon");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.CreatedAt)
+            .HasColumnName("created_at");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.UpdatedAt)
+            .HasColumnName("updated_at");
+
+
+
     }
 }

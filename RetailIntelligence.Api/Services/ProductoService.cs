@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
-using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.Dtos.Producto;
 
 namespace RetailIntelligence.Api.Services;
 
@@ -14,21 +14,19 @@ public class ProductoService : IProductoService
         _context = context;
     }
 
-    public async Task<List<object>> GetAllAsync()
+    public async Task<List<ProductoDto>> GetAllAsync()
     {
         return await _context.Productos
-            .Select(p => new
+            .Select(p => new ProductoDto
             {
-                p.IdProducto,
-                p.Codigo,
-                p.Nombre,
-                p.CostoActual,
-                p.PrecioVentaActual,
-
+                IdProducto = p.IdProducto,
+                Codigo = p.Codigo,
+                Nombre = p.Nombre,
+                CostoActual = p.CostoActual,
+                PrecioVentaActual = p.PrecioVentaActual,
                 Proveedor = p.Proveedor.Nombre,
                 Departamento = p.Departamento.Nombre
             })
-            .Cast<object>()
             .ToListAsync();
     }
 }

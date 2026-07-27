@@ -18,29 +18,40 @@ builder.Services.AddControllers()
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSwaggerGen();
+
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173")
+            .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
+
 // Registro de servicios
 builder.Services.AddScoped<IDepartamentoService, DepartamentoService>();
 builder.Services.AddScoped<IImportService, ImportService>();
 builder.Services.AddScoped<IProductoService, ProductoService>();
 builder.Services.AddScoped<IPedidoService, PedidoService>();
 
+
+builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
+
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
 
 var app = builder.Build();
 
+Console.WriteLine("========== CORS VERSION 3 ==========");
+Console.WriteLine(app.Environment.EnvironmentName);
+
 app.UseCors("ReactPolicy");
+
 
 // Swagger en desarrollo
 if (app.Environment.IsDevelopment())

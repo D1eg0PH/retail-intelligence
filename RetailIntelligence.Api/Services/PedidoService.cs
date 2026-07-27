@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Interfaces;
+using RetailIntelligence.Api.Dtos;
+using RetailIntelligence.Api.Dtos.Pedido;
+
 namespace RetailIntelligence.Api.Services;
 
 public class PedidoService : IPedidoService
@@ -13,84 +16,148 @@ public class PedidoService : IPedidoService
         _context = context;
     }
 
+    private async Task LimpiarPedidos()
+    {
+        await _context.Database.ExecuteSqlRawAsync(
+            "TRUNCATE TABLE pedidodetalle RESTART IDENTITY CASCADE");
 
-    // METODO PARA GENERAR PEDIDOS
+        await _context.Database.ExecuteSqlRawAsync(
+            "TRUNCATE TABLE pedidos RESTART IDENTITY CASCADE");
+    }
+
     public async Task GenerarPedidosAsync()
     {
+        await LimpiarPedidos();
 
-        await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidodetalle RESTART IDENTITY CASCADE");
+        var importacionInventario =
+            await ObtenerUltimaImportacionInventario();
 
-        await _context.Database.ExecuteSqlRawAsync( "TRUNCATE TABLE pedidos RESTART IDENTITY CASCADE");
+        var importacionVentas =
+            await ObtenerUltimaImportacionVentas();
 
-        var importacionInventario = await _context.Importaciones
-            .FirstOrDefaultAsync(i => i.TipoArchivo == "INVENTARIO");
+        var ventasPorProducto =
+            await ObtenerVentasPorProducto(importacionVentas);
 
+        var inventarioActual =
+            await ObtenerInventarioActual(importacionInventario);
 
-        if (importacionInventario == null)
+        await CrearPedidos(
+            ventasPorProducto,
+            inventarioActual);
+    }
+
+    private async Task<Importacion> ObtenerUltimaImportacionInventario()
+    {
+        var importacion = await _context.Importaciones
+            .Where(i => i.TipoArchivo == "INVENTARIO")
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (importacion == null)
         {
-            throw new Exception("No existe ninguna importación de inventario.");
+            throw new Exception(
+                "No existe ninguna importación de inventario.");
         }
 
-        Console.WriteLine($"Inventario utilizado: {importacionInventario.IdImportacion}");
-        Console.WriteLine(
-            $"Inventario utilizado: {importacionInventario.IdImportacion}");
+        return importacion;
+    }
 
-
-        var importacionVentas = await _context.Importaciones
-            .FirstOrDefaultAsync(i => i.TipoArchivo == "VENTAS_PERIODO");
-
-        if (importacionVentas == null)
-        {
-            throw new Exception("No existe ninguna importación de ventas.");
-        }
-
-
-
-        var diasPeriodo = Math.Max(1,importacionVentas.FechaFinPeriodo.DayNumber - importacionVentas.FechaInicioPeriodo.DayNumber + 1);
-
-
-        var semanasPeriodo = Math.Max(1m,diasPeriodo / 7m);
-
-
-        Console.WriteLine( $"Semanas analizadas: {semanasPeriodo}");
-
-
-        var ventasPorProducto = await _context.VentasPeriodo
-            .Where(v =>
-                v.IdImportacion ==
-                importacionVentas.IdImportacion)
+    private async Task<List<VentaProductoDto>> ObtenerVentasPorProducto(Importacion importacionVentas)
+    {
+        var ventas = await _context.VentasPeriodo
+            .Where(v => v.IdImportacion == importacionVentas.IdImportacion)
             .GroupBy(v => v.IdProducto)
-            .Select(g => new
+            .Select(g => new VentaProductoDto
             {
                 IdProducto = g.Key,
                 CantidadVendida = g.Sum(x => x.CantidadVendida)
             })
             .ToListAsync();
 
+        Console.WriteLine($"Productos con ventas: {ventas.Count}");
 
-        Console.WriteLine($"Productos con ventas: {ventasPorProducto.Count}");
+        return ventas;
+    }
 
-        var inventarioActual = await _context.Inventarios.Where(i => i.IdImportacion == importacionInventario.IdImportacion).GroupBy(i => i.IdProducto).ToDictionaryAsync(g => g.Key,g => g.Sum(x => x.Existencia));
+    private async Task<Importacion> ObtenerUltimaImportacionVentas()
+    {
+        var importacion = await _context.Importaciones
+            .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefaultAsync();
 
-        var pedidosPorProveedor = new Dictionary<int, Pedido>();
+        if (importacion == null)
+        {
+            throw new Exception(
+                "No existe ninguna importación de ventas.");
+        }
 
-        var productos = await _context.Productos.ToDictionaryAsync( p => p.IdProducto, p => p);
+        return importacion;
+    }
+
+    private async Task<Dictionary<int, decimal>> ObtenerInventarioActual(Importacion importacionInventario)
+    {
+        return await _context.Inventarios
+            .Where(i =>
+                i.IdImportacion == importacionInventario.IdImportacion)
+            .GroupBy(i => i.IdProducto)
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.Sum(x => x.Existencia));
+    }
+
+    private async Task CrearPedidos(List<VentaProductoDto> ventasPorProducto, Dictionary<int, decimal> inventarioActual)
+    {
+        var configuracion = await _context.ConfiguracionSistema
+    .SingleAsync();
+
+        var factorColchon =
+            1 + (configuracion.PorcentajeColchon / 100m);
+
+        Console.WriteLine(
+            $"Colchón configurado: {configuracion.PorcentajeColchon}%");
+
+        var importacionVentas =
+    await ObtenerUltimaImportacionVentas();
+
+        var diasPeriodo = Math.Max(
+            1,
+            importacionVentas.FechaFinPeriodo.DayNumber -
+            importacionVentas.FechaInicioPeriodo.DayNumber + 1);
+
+        var semanasPeriodo =
+            Math.Max(1m, diasPeriodo / 7m);
+
+        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
+
+        var pedidosPorProveedor =
+    new Dictionary<int, Pedido>();
+
+        var productos =
+            await _context.Productos.ToDictionaryAsync(
+                p => p.IdProducto,
+                p => p);
 
         int productosConPedido = 0;
 
         foreach (var venta in ventasPorProducto)
-        {   
+        {
             var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
 
-            var stockObjetivo = promedioSemanal * 1.20m;
+            var stockObjetivo = promedioSemanal * factorColchon;
 
-            var existenciaActual = inventarioActual.GetValueOrDefault(venta.IdProducto,0);
+            var existenciaActual = inventarioActual.GetValueOrDefault(
+                venta.IdProducto,
+                0);
 
-            var pedidoSugerido = Math.Ceiling(stockObjetivo - existenciaActual);
+            var pedidoSugerido =
+                Math.Ceiling(stockObjetivo - existenciaActual);
 
             pedidoSugerido = Math.Max(0, pedidoSugerido);
 
-            if (!productos.TryGetValue(venta.IdProducto,out var producto))
+            if (!productos.TryGetValue(
+                venta.IdProducto,
+                out var producto))
             {
                 continue;
             }
@@ -107,8 +174,6 @@ public class PedidoService : IPedidoService
                 continue;
             }
 
-
-            // Ignorar productos sin proveedor real
             if (producto.IdProveedor == 3)
             {
                 continue;
@@ -119,9 +184,9 @@ public class PedidoService : IPedidoService
             Console.ForegroundColor = ConsoleColor.Green;
 
             Console.WriteLine(
-            $"PEDIDO -> {producto.Nombre} | " +
-            $"Proveedor:{producto.IdProveedor} | " +
-            $"Pedido:{pedidoSugerido}");
+                $"PEDIDO -> {producto.Nombre} | " +
+                $"Proveedor:{producto.IdProveedor} | " +
+                $"Pedido:{pedidoSugerido}");
 
             Console.ResetColor();
 
@@ -140,10 +205,13 @@ public class PedidoService : IPedidoService
 
                 await _context.SaveChangesAsync();
 
-                pedidosPorProveedor.Add(producto.IdProveedor,pedido);
+                pedidosPorProveedor.Add(
+                    producto.IdProveedor,
+                    pedido);
             }
 
-            var pedidoProveedor = pedidosPorProveedor[producto.IdProveedor];
+            var pedidoProveedor =
+                pedidosPorProveedor[producto.IdProveedor];
 
             var detalle = new PedidoDetalle
             {
@@ -170,88 +238,95 @@ public class PedidoService : IPedidoService
         Console.WriteLine($"Ventas utilizadas: {importacionVentas.IdImportacion}");
         Console.WriteLine($"Fecha inicio: {importacionVentas.FechaInicioPeriodo}");
         Console.WriteLine($"Fecha fin: {importacionVentas.FechaFinPeriodo}");
-
         Console.WriteLine($"Dias periodo: {diasPeriodo}");
-
         Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
     }
 
-    //METODO API PARA OBTENER PEDIDOS
-
-
-    public async Task<List<object>> GetPedidosAsync()
+    public async Task<List<PedidoDto>> GetPedidosAsync()
     {
-        return await _context.Pedidos.Select(p => new
-            {
-                p.IdPedido,
-                Proveedor = p.Proveedor.Nombre,
-                Estado = p.Estado.Nombre,
-                p.FechaPedido,
-
-                Productos = p.PedidoDetalles.Count(),
-
-                MontoEstimado = p.PedidoDetalles.Sum(
-                    d => d.CantidadSugerida * d.CostoUnitario)
-            }).Cast<object>().ToListAsync();
+            return await _context.Pedidos
+        .Select(p => new PedidoDto
+        {
+            IdPedido = p.IdPedido,
+            Proveedor = p.Proveedor.Nombre,
+            Estado = p.Estado.Nombre,
+            FechaPedido = p.FechaPedido,
+            Productos = p.PedidoDetalles.Count(),
+            MontoEstimado = p.PedidoDetalles.Sum(
+                d => d.CantidadSugerida * d.CostoUnitario)
+        })
+        .ToListAsync();
     }
 
-    public async Task<object?> GetPedidoAsync(int id)
+    public async Task<PedidoCompletoDto?> GetPedidoAsync(int id)
     {
-        return await _context.Pedidos.Where(p => p.IdPedido == id).Select(p => new
+        return await _context.Pedidos
+            .Where(p => p.IdPedido == id)
+            .Select(p => new PedidoCompletoDto
             {
-                p.IdPedido,
+                IdPedido = p.IdPedido,
 
                 Proveedor = p.Proveedor.Nombre,
 
                 Estado = p.Estado.Nombre,
 
-                p.FechaPedido,
+                FechaPedido = p.FechaPedido,
 
-            Detalles = p.PedidoDetalles.Select(d => new
-            {
-                d.IdDetalle,
+                Detalles = p.PedidoDetalles
+                    .Select(d => new PedidoDetalleDto
+                    {
+                        IdDetalle = d.IdDetalle,
 
-                Producto = d.Producto.Nombre,
+                        Producto = d.Producto.Nombre,
 
-                Existencia =_context.Inventarios.Where(i => i.IdProducto == d.IdProducto).Sum(i => (decimal?)i.Existencia) ?? 0,
+                        Existencia = _context.Inventarios
+                            .Where(i => i.IdProducto == d.IdProducto)
+                            .Sum(i => (decimal?)i.Existencia) ?? 0,
 
-                VendidoPeriodo =_context.VentasPeriodo.Where(v => v.IdProducto == d.IdProducto).Sum(v => (decimal?)v.CantidadVendida) ?? 0,
+                        VendidoPeriodo = _context.VentasPeriodo
+                            .Where(v => v.IdProducto == d.IdProducto)
+                            .Sum(v => (decimal?)v.CantidadVendida) ?? 0,
 
-                d.CantidadSugerida,
+                        CantidadSugerida = d.CantidadSugerida,
 
-                d.CantidadPedida,
+                        CantidadPedida = d.CantidadPedida,
 
-                d.CostoUnitario,
+                        CostoUnitario = d.CostoUnitario,
 
-                Subtotal =
-             (
-                 d.CantidadPedida ??
-                 d.CantidadSugerida
-             ) * d.CostoUnitario
-            }),
+                        Subtotal =
+                            (d.CantidadPedida ?? d.CantidadSugerida)
+                            * d.CostoUnitario
+                    })
+                    .ToList(),
 
-            ProductosDisponibles = _context.Productos.Where(prod => prod.IdProveedor == p.IdProveedor && !p.PedidoDetalles.Select(d => d.IdProducto).Contains(prod.IdProducto)).Select(prod => new
-                {
-                    prod.IdProducto,
-                    prod.Nombre,
+                ProductosDisponibles = _context.Productos
+                    .Where(prod =>
+                        prod.IdProveedor == p.IdProveedor &&
+                        !p.PedidoDetalles
+                            .Select(d => d.IdProducto)
+                            .Contains(prod.IdProducto))
+                    .Select(prod => new ProductoDisponibleDto
+                    {
+                        IdProducto = prod.IdProducto,
 
-                    Existencia = _context.Inventarios.Where(i => i.IdProducto == prod.IdProducto).Sum(i => (decimal?)i.Existencia) ?? 0,
+                        Nombre = prod.Nombre,
 
-                    VendidoPeriodo = _context.VentasPeriodo.Where(v => v.IdProducto == prod.IdProducto).Sum(v => (decimal?)v.CantidadVendida) ?? 0,
+                        Existencia = _context.Inventarios
+                            .Where(i => i.IdProducto == prod.IdProducto)
+                            .Sum(i => (decimal?)i.Existencia) ?? 0,
 
-                    prod.CostoActual
-                })
-                .ToList(),
+                        VendidoPeriodo = _context.VentasPeriodo
+                            .Where(v => v.IdProducto == prod.IdProducto)
+                            .Sum(v => (decimal?)v.CantidadVendida) ?? 0,
 
-            MontoTotal = p.PedidoDetalles.Sum(
-            d =>
-                (
-                    d.CantidadPedida ??
-                    d.CantidadSugerida
-                ) *
-                d.CostoUnitario)
+                        CostoActual = prod.CostoActual
+                    })
+                    .ToList(),
 
-        })
+                MontoTotal = p.PedidoDetalles.Sum(d =>
+                    (d.CantidadPedida ?? d.CantidadSugerida)
+                    * d.CostoUnitario)
+            })
             .FirstOrDefaultAsync();
     }
 
@@ -287,6 +362,116 @@ public class PedidoService : IPedidoService
         detalle.CantidadPedida = cantidad;
 
         detalle.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task AgregarProductoAsync(int idPedido,int idProducto)
+    {
+        var pedido = await _context.Pedidos
+            .FirstOrDefaultAsync(
+                p => p.IdPedido == idPedido);
+
+        if (pedido == null)
+        {
+            throw new Exception(
+                "Pedido no encontrado.");
+        }
+
+        var producto = await _context.Productos
+            .FirstOrDefaultAsync(
+                p => p.IdProducto == idProducto);
+
+        if (producto == null)
+        {
+            throw new Exception(
+                "Producto no encontrado.");
+        }
+
+        var yaExiste = await _context.PedidoDetalles
+            .AnyAsync(d =>
+                d.IdPedido == idPedido &&
+                d.IdProducto == idProducto);
+
+        if (yaExiste)
+        {
+            throw new Exception(
+                "El producto ya está agregado.");
+        }
+
+        var detalle = new PedidoDetalle
+        {
+            IdPedido = idPedido,
+            IdProducto = idProducto,
+
+            CantidadSugerida = 0,
+
+            // por comodidad iniciamos con 1
+            CantidadPedida = 1,
+
+            CostoUnitario =
+                producto.CostoActual,
+
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.PedidoDetalles.Add(
+            detalle);
+
+        await _context.SaveChangesAsync();
+    }
+
+
+    public async Task QuitarProductosAsync(List<int> detalles)
+    {
+        var registros = await _context.PedidoDetalles
+            .Where(d => detalles.Contains(d.IdDetalle))
+            .ToListAsync();
+
+        _context.PedidoDetalles.RemoveRange(registros);
+
+        await _context.SaveChangesAsync();
+    }
+
+    /*public async Task QuitarProductosAsync(List<int> detalles)
+    {
+        var registros = await _context.PedidoDetalles.Where(d => detalles.Contains(d.IdDetalle)).ToListAsync();
+
+        foreach (var detalle in registros)
+        {
+            // Producto agregado manualmente
+            if (detalle.CantidadSugerida == 0)
+            {
+                _context.PedidoDetalles.Remove(
+                    detalle);
+
+                continue;
+            }
+
+            // Producto sugerido por el sistema
+            detalle.CantidadPedida = 0;
+            detalle.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+    }*/
+
+    public async Task ActualizarCantidadesAsync(int idPedido,List<ActualizarCantidadesDto> cantidades)
+    {
+        var detalles = await _context.PedidoDetalles.Where(x => x.IdPedido == idPedido).ToListAsync();
+
+        foreach (var detalle in detalles)
+        {
+            var dto = cantidades.FirstOrDefault(
+                x => x.IdDetalle == detalle.IdDetalle);
+
+            if (dto != null)
+            {
+                detalle.CantidadPedida = dto.CantidadPedida;
+                detalle.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         await _context.SaveChangesAsync();
     }
