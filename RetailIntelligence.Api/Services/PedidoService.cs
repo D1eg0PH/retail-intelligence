@@ -27,8 +27,6 @@ public class PedidoService : IPedidoService
 
     public async Task GenerarPedidosAsync()
     {
-        await LimpiarPedidos();
-
         var importacionInventario =
             await ObtenerUltimaImportacionInventario();
 
@@ -41,9 +39,24 @@ public class PedidoService : IPedidoService
         var inventarioActual =
             await ObtenerInventarioActual(importacionInventario);
 
+        var diasPeriodo =
+            importacionVentas.FechaFinPeriodo.DayNumber -
+            importacionVentas.FechaInicioPeriodo.DayNumber + 1;
+
+        if (importacionVentas.FechaInicioPeriodo == default ||
+            importacionVentas.FechaFinPeriodo == default ||
+            diasPeriodo <= 0)
+        {
+            throw new Exception("El período de la importación de ventas es inválido.");
+        }
+
+        await LimpiarPedidos();
+
         await CrearPedidos(
             ventasPorProducto,
-            inventarioActual);
+            inventarioActual,
+            importacionVentas,
+            diasPeriodo);
     }
 
     private async Task<Importacion> ObtenerUltimaImportacionInventario()
@@ -79,11 +92,14 @@ public class PedidoService : IPedidoService
         return ventas;
     }
 
+
     private async Task<Importacion> ObtenerUltimaImportacionVentas()
     {
         var importacion = await _context.Importaciones
             .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
-            .OrderByDescending(i => i.CreatedAt)
+            .OrderByDescending(i => i.FechaFinPeriodo)
+            .ThenByDescending(i => i.FechaInicioPeriodo)
+            .ThenByDescending(i => i.CreatedAt)
             .FirstOrDefaultAsync();
 
         if (importacion == null)
@@ -94,6 +110,7 @@ public class PedidoService : IPedidoService
 
         return importacion;
     }
+
 
     private async Task<Dictionary<int, decimal>> ObtenerInventarioActual(Importacion importacionInventario)
     {
@@ -106,141 +123,87 @@ public class PedidoService : IPedidoService
                 g => g.Sum(x => x.Existencia));
     }
 
-    private async Task CrearPedidos(List<VentaProductoDto> ventasPorProducto, Dictionary<int, decimal> inventarioActual)
+    private async Task CrearPedidos(
+        List<VentaProductoDto> ventasPorProducto,
+        Dictionary<int, decimal> inventarioActual,
+        Importacion importacionVentas,
+        int diasPeriodo)
     {
-        var configuracion = await _context.ConfiguracionSistema
-    .SingleAsync();
+        var configuracion = await _context.ConfiguracionSistema.SingleAsync();
+        var factorColchon = 1m + configuracion.PorcentajeColchon / 100m;
+        const int diasCoberturaObjetivo = 28;
 
-        var factorColchon =
-            1 + (configuracion.PorcentajeColchon / 100m);
-
+        Console.WriteLine($"Colchón configurado: {configuracion.PorcentajeColchon}%");
+        Console.WriteLine($"Importación utilizada: {importacionVentas.IdImportacion}");
         Console.WriteLine(
-            $"Colchón configurado: {configuracion.PorcentajeColchon}%");
+            $"Período analizado: {importacionVentas.FechaInicioPeriodo} al " +
+            $"{importacionVentas.FechaFinPeriodo} ({diasPeriodo} días)");
 
-        var importacionVentas =
-    await ObtenerUltimaImportacionVentas();
-
-        var diasPeriodo = Math.Max(
-            1,
-            importacionVentas.FechaFinPeriodo.DayNumber -
-            importacionVentas.FechaInicioPeriodo.DayNumber + 1);
-
-        var semanasPeriodo =
-            Math.Max(1m, diasPeriodo / 7m);
-
-        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
-
-        var pedidosPorProveedor =
-    new Dictionary<int, Pedido>();
-
-        var productos =
-            await _context.Productos.ToDictionaryAsync(
-                p => p.IdProducto,
-                p => p);
-
-        int productosConPedido = 0;
+        var pedidosPorProveedor = new Dictionary<int, Pedido>();
+        var productos = await _context.Productos
+            .ToDictionaryAsync(p => p.IdProducto);
+        var ahora = DateTime.UtcNow;
+        var productosConPedido = 0;
 
         foreach (var venta in ventasPorProducto)
         {
-            var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
+            if (!productos.TryGetValue(venta.IdProducto, out var producto) ||
+                producto.IdProveedor == 3)
+            {
+                continue;
+            }
 
-            var stockObjetivo = promedioSemanal * factorColchon;
-
+            var promedioDiario = venta.CantidadVendida / diasPeriodo;
+            var stockObjetivo =
+                promedioDiario * diasCoberturaObjetivo * factorColchon;
             var existenciaActual = inventarioActual.GetValueOrDefault(
                 venta.IdProducto,
-                0);
+                0m);
+            var pedidoSugerido = Math.Max(
+                0m,
+                Math.Ceiling(stockObjetivo - existenciaActual));
 
-            var pedidoSugerido =
-                Math.Ceiling(stockObjetivo - existenciaActual);
-
-            pedidoSugerido = Math.Max(0, pedidoSugerido);
-
-            if (!productos.TryGetValue(
-                venta.IdProducto,
-                out var producto))
+            if (pedidoSugerido <= 0m)
             {
                 continue;
             }
 
-            Console.WriteLine(
-                $"{producto.Nombre,-40}" +
-                $" Vendido:{venta.CantidadVendida,-5}" +
-                $" Exist:{existenciaActual,-5}" +
-                $" Objetivo:{stockObjetivo,-8:F2}" +
-                $" Pedido:{pedidoSugerido}");
-
-            if (pedidoSugerido <= 0)
+            if (!pedidosPorProveedor.TryGetValue(
+                    producto.IdProveedor,
+                    out var pedidoProveedor))
             {
-                continue;
-            }
-
-            if (producto.IdProveedor == 3)
-            {
-                continue;
-            }
-
-            productosConPedido++;
-
-            Console.ForegroundColor = ConsoleColor.Green;
-
-            Console.WriteLine(
-                $"PEDIDO -> {producto.Nombre} | " +
-                $"Proveedor:{producto.IdProveedor} | " +
-                $"Pedido:{pedidoSugerido}");
-
-            Console.ResetColor();
-
-            if (!pedidosPorProveedor.ContainsKey(producto.IdProveedor))
-            {
-                var pedido = new Pedido
+                pedidoProveedor = new Pedido
                 {
                     IdProveedor = producto.IdProveedor,
                     IdEstado = 1,
                     FechaPedido = DateOnly.FromDateTime(DateTime.Today),
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = ahora,
+                    UpdatedAt = ahora
                 };
 
-                _context.Pedidos.Add(pedido);
-
-                await _context.SaveChangesAsync();
-
-                pedidosPorProveedor.Add(
-                    producto.IdProveedor,
-                    pedido);
+                pedidosPorProveedor.Add(producto.IdProveedor, pedidoProveedor);
+                _context.Pedidos.Add(pedidoProveedor);
             }
 
-            var pedidoProveedor =
-                pedidosPorProveedor[producto.IdProveedor];
-
-            var detalle = new PedidoDetalle
+            pedidoProveedor.PedidoDetalles.Add(new PedidoDetalle
             {
-                IdPedido = pedidoProveedor.IdPedido,
                 IdProducto = producto.IdProducto,
                 CantidadSugerida = pedidoSugerido,
                 CantidadPedida = null,
                 CostoUnitario = producto.CostoActual,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+                CreatedAt = ahora,
+                UpdatedAt = ahora
+            });
 
-            _context.PedidoDetalles.Add(detalle);
+            productosConPedido++;
         }
 
         await _context.SaveChangesAsync();
 
-        Console.WriteLine();
-        Console.WriteLine("=================================");
-        Console.WriteLine($"Productos a pedir: {productosConPedido}");
-        Console.WriteLine($"Proveedores: {pedidosPorProveedor.Count}");
-        Console.WriteLine("=================================");
-
-        Console.WriteLine($"Ventas utilizadas: {importacionVentas.IdImportacion}");
-        Console.WriteLine($"Fecha inicio: {importacionVentas.FechaInicioPeriodo}");
-        Console.WriteLine($"Fecha fin: {importacionVentas.FechaFinPeriodo}");
-        Console.WriteLine($"Dias periodo: {diasPeriodo}");
-        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
+        Console.WriteLine($"Productos con pedido: {productosConPedido}");
+        Console.WriteLine($"Proveedores con pedido: {pedidosPorProveedor.Count}");
     }
+
 
     public async Task<List<PedidoDto>> GetPedidosAsync()
     {
