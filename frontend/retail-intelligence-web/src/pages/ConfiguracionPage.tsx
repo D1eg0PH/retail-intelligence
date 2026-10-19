@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 
 import type { Configuracion } from "../types/configuracion";
-import { cn } from "../lib/utils";
 
 import {
     getConfiguracion,
     updateConfiguracion
 } from "../services/configuracionService";
 
-import PageHeader from "../components/ui/Pageheader";
+import PageHeader from "../components/ui/PageHeader";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";

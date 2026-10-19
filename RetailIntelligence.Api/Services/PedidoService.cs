@@ -27,8 +27,6 @@ public class PedidoService : IPedidoService
 
     public async Task GenerarPedidosAsync()
     {
-        await LimpiarPedidos();
-
         var importacionInventario =
             await ObtenerUltimaImportacionInventario();
 
@@ -41,9 +39,42 @@ public class PedidoService : IPedidoService
         var inventarioActual =
             await ObtenerInventarioActual(importacionInventario);
 
-        await CrearPedidos(
-            ventasPorProducto,
-            inventarioActual);
+        var diasPeriodo =
+            importacionVentas.FechaFinPeriodo.DayNumber -
+            importacionVentas.FechaInicioPeriodo.DayNumber + 1;
+
+        if (importacionVentas.FechaInicioPeriodo == default ||
+            importacionVentas.FechaFinPeriodo == default ||
+            diasPeriodo <= 0)
+        {
+            throw new InvalidOperationException(
+                "El período de la importación de ventas es inválido.");
+        }
+
+        var configuracion = await ObtenerConfiguracionAsync();
+
+        await using var transaccion =
+            await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            await LimpiarPedidos();
+
+            await CrearPedidos(
+                ventasPorProducto,
+                inventarioActual,
+                importacionVentas,
+                diasPeriodo,
+                configuracion.PorcentajeColchon);
+
+            await transaccion.CommitAsync();
+        }
+        catch
+        {
+            await transaccion.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     private async Task<Importacion> ObtenerUltimaImportacionInventario()
@@ -55,7 +86,7 @@ public class PedidoService : IPedidoService
 
         if (importacion == null)
         {
-            throw new Exception(
+            throw new InvalidOperationException(
                 "No existe ninguna importación de inventario.");
         }
 
@@ -79,21 +110,56 @@ public class PedidoService : IPedidoService
         return ventas;
     }
 
+
     private async Task<Importacion> ObtenerUltimaImportacionVentas()
     {
         var importacion = await _context.Importaciones
             .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
-            .OrderByDescending(i => i.CreatedAt)
+            .OrderByDescending(i => i.FechaFinPeriodo)
+            .ThenByDescending(i => i.FechaInicioPeriodo)
+            .ThenByDescending(i => i.CreatedAt)
             .FirstOrDefaultAsync();
 
         if (importacion == null)
         {
-            throw new Exception(
+            throw new InvalidOperationException(
                 "No existe ninguna importación de ventas.");
+        }
+
+        var diasPeriodo = importacion.FechaFinPeriodo.DayNumber -
+            importacion.FechaInicioPeriodo.DayNumber + 1;
+
+        if (importacion.FechaInicioPeriodo == default ||
+            importacion.FechaFinPeriodo == default ||
+            diasPeriodo <= 0)
+        {
+            throw new InvalidOperationException(
+                "El período de la última importación de ventas es inválido.");
         }
 
         return importacion;
     }
+
+    private async Task<ConfiguracionSistema> ObtenerConfiguracionAsync()
+    {
+        var configuracion = await _context.ConfiguracionSistema
+            .SingleOrDefaultAsync();
+
+        if (configuracion == null)
+        {
+            throw new InvalidOperationException(
+                "No existe una configuración del sistema para generar pedidos.");
+        }
+
+        if (configuracion.PorcentajeColchon < 0m)
+        {
+            throw new InvalidOperationException(
+                "El porcentaje de colchón configurado no puede ser negativo.");
+        }
+
+        return configuracion;
+    }
+
 
     private async Task<Dictionary<int, decimal>> ObtenerInventarioActual(Importacion importacionInventario)
     {
@@ -106,141 +172,87 @@ public class PedidoService : IPedidoService
                 g => g.Sum(x => x.Existencia));
     }
 
-    private async Task CrearPedidos(List<VentaProductoDto> ventasPorProducto, Dictionary<int, decimal> inventarioActual)
+    private async Task CrearPedidos(
+        List<VentaProductoDto> ventasPorProducto,
+        Dictionary<int, decimal> inventarioActual,
+        Importacion importacionVentas,
+        int diasPeriodo,
+        decimal porcentajeColchon)
     {
-        var configuracion = await _context.ConfiguracionSistema
-    .SingleAsync();
+        var semanasPeriodo = diasPeriodo / 7m;
+        var factorColchon = 1m + porcentajeColchon / 100m;
 
-        var factorColchon =
-            1 + (configuracion.PorcentajeColchon / 100m);
-
+        Console.WriteLine($"Colchón configurado: {porcentajeColchon}%");
+        Console.WriteLine($"Importación utilizada: {importacionVentas.IdImportacion}");
         Console.WriteLine(
-            $"Colchón configurado: {configuracion.PorcentajeColchon}%");
+            $"Período analizado: {importacionVentas.FechaInicioPeriodo} al " +
+            $"{importacionVentas.FechaFinPeriodo} ({diasPeriodo} días, " +
+            $"{semanasPeriodo} semanas)");
 
-        var importacionVentas =
-    await ObtenerUltimaImportacionVentas();
-
-        var diasPeriodo = Math.Max(
-            1,
-            importacionVentas.FechaFinPeriodo.DayNumber -
-            importacionVentas.FechaInicioPeriodo.DayNumber + 1);
-
-        var semanasPeriodo =
-            Math.Max(1m, diasPeriodo / 7m);
-
-        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
-
-        var pedidosPorProveedor =
-    new Dictionary<int, Pedido>();
-
-        var productos =
-            await _context.Productos.ToDictionaryAsync(
-                p => p.IdProducto,
-                p => p);
-
-        int productosConPedido = 0;
+        var pedidosPorProveedor = new Dictionary<int, Pedido>();
+        var productos = await _context.Productos
+            .ToDictionaryAsync(p => p.IdProducto);
+        var ahora = DateTime.UtcNow;
+        var productosConPedido = 0;
 
         foreach (var venta in ventasPorProducto)
         {
+            if (!productos.TryGetValue(venta.IdProducto, out var producto) ||
+                producto.IdProveedor == 3)
+            {
+                continue;
+            }
+
             var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
-
-            var stockObjetivo = promedioSemanal * factorColchon;
-
+            var demandaObjetivo = promedioSemanal * factorColchon;
             var existenciaActual = inventarioActual.GetValueOrDefault(
                 venta.IdProducto,
-                0);
+                0m);
+            var pedidoSugerido = Math.Max(
+                0m,
+                Math.Ceiling(demandaObjetivo - existenciaActual));
 
-            var pedidoSugerido =
-                Math.Ceiling(stockObjetivo - existenciaActual);
-
-            pedidoSugerido = Math.Max(0, pedidoSugerido);
-
-            if (!productos.TryGetValue(
-                venta.IdProducto,
-                out var producto))
+            if (pedidoSugerido <= 0m)
             {
                 continue;
             }
 
-            Console.WriteLine(
-                $"{producto.Nombre,-40}" +
-                $" Vendido:{venta.CantidadVendida,-5}" +
-                $" Exist:{existenciaActual,-5}" +
-                $" Objetivo:{stockObjetivo,-8:F2}" +
-                $" Pedido:{pedidoSugerido}");
-
-            if (pedidoSugerido <= 0)
+            if (!pedidosPorProveedor.TryGetValue(
+                    producto.IdProveedor,
+                    out var pedidoProveedor))
             {
-                continue;
-            }
-
-            if (producto.IdProveedor == 3)
-            {
-                continue;
-            }
-
-            productosConPedido++;
-
-            Console.ForegroundColor = ConsoleColor.Green;
-
-            Console.WriteLine(
-                $"PEDIDO -> {producto.Nombre} | " +
-                $"Proveedor:{producto.IdProveedor} | " +
-                $"Pedido:{pedidoSugerido}");
-
-            Console.ResetColor();
-
-            if (!pedidosPorProveedor.ContainsKey(producto.IdProveedor))
-            {
-                var pedido = new Pedido
+                pedidoProveedor = new Pedido
                 {
                     IdProveedor = producto.IdProveedor,
                     IdEstado = 1,
                     FechaPedido = DateOnly.FromDateTime(DateTime.Today),
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = ahora,
+                    UpdatedAt = ahora
                 };
 
-                _context.Pedidos.Add(pedido);
-
-                await _context.SaveChangesAsync();
-
-                pedidosPorProveedor.Add(
-                    producto.IdProveedor,
-                    pedido);
+                pedidosPorProveedor.Add(producto.IdProveedor, pedidoProveedor);
+                _context.Pedidos.Add(pedidoProveedor);
             }
 
-            var pedidoProveedor =
-                pedidosPorProveedor[producto.IdProveedor];
-
-            var detalle = new PedidoDetalle
+            pedidoProveedor.PedidoDetalles.Add(new PedidoDetalle
             {
-                IdPedido = pedidoProveedor.IdPedido,
                 IdProducto = producto.IdProducto,
                 CantidadSugerida = pedidoSugerido,
                 CantidadPedida = null,
                 CostoUnitario = producto.CostoActual,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+                CreatedAt = ahora,
+                UpdatedAt = ahora
+            });
 
-            _context.PedidoDetalles.Add(detalle);
+            productosConPedido++;
         }
 
         await _context.SaveChangesAsync();
 
-        Console.WriteLine();
-        Console.WriteLine("=================================");
-        Console.WriteLine($"Productos a pedir: {productosConPedido}");
-        Console.WriteLine($"Proveedores: {pedidosPorProveedor.Count}");
-        Console.WriteLine("=================================");
-
-        Console.WriteLine($"Ventas utilizadas: {importacionVentas.IdImportacion}");
-        Console.WriteLine($"Fecha inicio: {importacionVentas.FechaInicioPeriodo}");
-        Console.WriteLine($"Fecha fin: {importacionVentas.FechaFinPeriodo}");
-        Console.WriteLine($"Dias periodo: {diasPeriodo}");
-        Console.WriteLine($"Semanas analizadas: {semanasPeriodo}");
+        Console.WriteLine($"Productos con pedido: {productosConPedido}");
+        Console.WriteLine($"Proveedores con pedido: {pedidosPorProveedor.Count}");
     }
+
 
     public async Task<List<PedidoDto>> GetPedidosAsync()
     {
@@ -422,7 +434,6 @@ public class PedidoService : IPedidoService
         await _context.SaveChangesAsync();
     }
 
-
     public async Task QuitarProductosAsync(List<int> detalles)
     {
         var registros = await _context.PedidoDetalles
@@ -433,29 +444,6 @@ public class PedidoService : IPedidoService
 
         await _context.SaveChangesAsync();
     }
-
-    /*public async Task QuitarProductosAsync(List<int> detalles)
-    {
-        var registros = await _context.PedidoDetalles.Where(d => detalles.Contains(d.IdDetalle)).ToListAsync();
-
-        foreach (var detalle in registros)
-        {
-            // Producto agregado manualmente
-            if (detalle.CantidadSugerida == 0)
-            {
-                _context.PedidoDetalles.Remove(
-                    detalle);
-
-                continue;
-            }
-
-            // Producto sugerido por el sistema
-            detalle.CantidadPedida = 0;
-            detalle.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _context.SaveChangesAsync();
-    }*/
 
     public async Task ActualizarCantidadesAsync(int idPedido,List<ActualizarCantidadesDto> cantidades)
     {

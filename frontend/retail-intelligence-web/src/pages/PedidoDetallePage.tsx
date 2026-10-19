@@ -16,18 +16,8 @@ export default function PedidoDetallePage() {
     const [seleccionados, setSeleccionados] = useState<number[]>([]);
 
     const [busquedaProducto, setBusquedaProducto] = useState("");
+
     useEffect(() => {cargarPedido();}, []);
-
-    const productosDisponiblesFiltrados =
-    pedido.productosDisponibles.filter((producto: any) => {
-
-        const texto = busquedaProducto.toLowerCase();
-
-        return (
-            producto.nombre.toLowerCase().includes(texto) ||
-            producto.codigo.toString().includes(texto)
-        );
-    });
 
     const cargarPedido = async () => {
         try {
@@ -172,16 +162,25 @@ export default function PedidoDetallePage() {
                 detalle.costoUnitario
             ),
         0
-    ) ?? 0;
+        ) ?? 0;
 
-    if (!pedido) {
-        return (
-            <div className="p-8">
-                Cargando pedido...
-            </div>
-        );
-    }
+        if (!pedido) {
+            return (
+                <div className="p-8">
+                    Cargando pedido...
+                </div>
+            );
+        }
 
+        const productosDisponiblesFiltrados =
+            pedido.productosDisponibles.filter((producto: any) => {
+
+                const texto = busquedaProducto.toLowerCase();
+
+                return producto.nombre
+                    .toLowerCase()
+                    .includes(texto);
+            });
 
     return (
         <div className="max-w-7xl mx-auto p-8">
@@ -239,28 +238,6 @@ export default function PedidoDetallePage() {
 
                 </div>
 
-            </div>
-
-            {/* CUADRO DE BUSQUEDA */}
-            <div className="mb-4">
-                <input
-                    type="text"
-                    placeholder="Buscar producto por nombre o código..."
-                    value={busquedaProducto}
-                    onChange={(e) =>
-                        setBusquedaProducto(e.target.value)
-                    }
-                    className="
-                        w-full
-                        md:w-96
-                        border
-                        rounded-lg
-                        p-2
-                    "
-                />
-                <p className="text-sm text-gray-500 mb-2">
-                    {productosDisponiblesFiltrados.length} de {pedido.productosDisponibles.length} productos
-                </p>
             </div>
 
             {/* TABLA */}
@@ -420,7 +397,31 @@ export default function PedidoDetallePage() {
 
             </div>
 
+           <div className="mb-4">
+                <input
+                    type="text"
+                    placeholder="Buscar por nombre..."
+                    value={busquedaProducto}
+                    onChange={(e) =>
+                        setBusquedaProducto(e.target.value)
+                    }
+                    className="
+                        w-full
+                        md:w-96
+                        border
+                        rounded-lg
+                        p-2
+                    "
+                />
+                <p className="text-sm text-gray-500 mb-2">
+                    {productosDisponiblesFiltrados.length} de {pedido.productosDisponibles.length} productos
+                </p>
+            </div>
+
+
             {/* PRODUCTOS DISPONIBLES */}
+
+  
             {
                 pedido.productosDisponibles?.length > 0 && (
 
@@ -461,7 +462,7 @@ export default function PedidoDetallePage() {
                             </thead>
 
                             <tbody>
-                                {pedido.productosDisponibles.map((producto: any) => (
+                                {productosDisponiblesFiltrados.map((producto: any) => (
                                         <tr
                                             key={producto.idProducto} className="border-t hover:bg-gray-50">
                                             <td className="p-4">

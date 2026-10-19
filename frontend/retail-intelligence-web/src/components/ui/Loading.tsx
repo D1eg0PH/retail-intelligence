@@ -1,4 +1,3 @@
-import { cn } from "../../lib/utils";
 
 interface LoadingProps {
     message?: string;
