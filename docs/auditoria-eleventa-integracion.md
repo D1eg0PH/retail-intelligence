@@ -1,28 +1,28 @@
 # Auditoría Eleventa → Retail Intelligence (avance basado en evidencia)
 
-**Estado:** auditoría parcial, pendiente de lectura del esquema y datos Firebird.  
-**Fecha:** 19 de octubre de 2026.  
+**Estado:** auditoría técnica basada en los metadatos y datos consultados de la copia restaurada.
+**Fecha:** 19 de octubre de 2026.
 **Alcance de esta etapa:** inspección sin cambios en Eleventa, PostgreSQL ni código existente.
 
-> La base restaurada existe (`C:\EleventaRestore\eleventa_test.fdb`, 315,572,224 bytes) y el directorio Firebird 2.0 está presente. No fue posible abrir la base: `isql.exe` termina al iniciar con `Illegal System DLL Relocation` (error de DLL del entorno de Windows), antes de autenticar o ejecutar SQL. Por ello, este informe separa hechos comprobados en el repositorio de hipótesis aún no verificadas. No se atribuye ningún esquema, dato de muestra, fecha ni unidad monetaria a Eleventa.
+> Se consultó directamente `C:\EleventaRestore\ELEVENTA_TEST.FDB` con el `isql.exe` Firebird 2.0 ya instalado, a través del servicio local Firebird y en transacciones `READ ONLY`. El modo aislado de ejecución de comandos inicialmente impedía iniciar `isql`; al ejecutarlo en el contexto permitido, abrió la base sin Eleventa. No se ejecutó DML/DDL ni se alteró el archivo restaurado.
 
 ## Resumen ejecutivo
 
-1. Retail Intelligence actualmente recibe hojas Excel de inventario y ventas por período. No hay extractor Firebird ni importación transaccional de tickets en el código revisado.
-2. El producto no tiene un campo para guardar la fecha real de alta de Eleventa ni procedencia/confianza de esa fecha. `CreatedAt` se asigna al importar a Retail Intelligence, por lo que no representa el alta original.
-3. La depuración usa `ConfiguracionSistema.DiasProductoMuerto` (en el esquema SQL, default 60). Evalúa ventas agregadas dentro de períodos importados, con cobertura temporal continua. Si hubo cualquier cantidad positiva clasifica “Con movimiento”; si no hubo ventas y hay cobertura completa clasifica “Posible producto muerto”; sin cobertura clasifica “Información insuficiente”. No usa edad del producto, historial de primera/última venta, ni suficiencia específica por producto.
-4. La importación de ventas guarda totales por producto y archivo/período, sin fecha de cada venta ni clave de ticket/línea. Este modelo no permite responder primera/última venta por producto ni deduplicar hechos a nivel ticket con fiabilidad.
-5. La importación actual de inventario borra primero todos los inventarios e importaciones `INVENTARIO`; crea un hash aleatorio, y crea/actualiza productos usando proveedor del archivo y departamento fijo `1`. No es una sincronización idempotente con trazabilidad histórica.
-6. No existe evidencia disponible para confirmar si Eleventa conserva fecha de alta de producto, claves/relaciones, importes en pesos/centavos, fórmula de devoluciones o fuente autoritativa de existencias. Se requieren las consultas de la sección 8 ejecutadas sobre la copia restaurada.
-7. Recomendación provisional: comenzar con un extractor/importador por lotes separado (proceso de integración en .NET compatible con Firebird 2.0), lectura de Firebird en solo lectura y persistencia solo en PostgreSQL. Reutilizar las entidades/servicios actuales donde su granularidad sea suficiente; el historial transaccional requeriría un modelo destino de detalle de ticket antes de implementar. La elección final queda condicionada a los metadatos reales y al despliegue futuro.
+1. Eleventa tiene 79 tablas de usuario, 6 procedimientos y 0 vistas de usuario. Las tablas incluyen el catálogo, tickets, renglones, devoluciones e historial de inventario; el inventario relevante está distribuido en `INVENTARIO_BALANCES` y `INVENTARIO_HISTORIAL`.
+2. `PRODUCTOS.CODIGO` es único por restricción; `PRODUCTOS.ID` es la PK y conviene usarla como identidad origen. No hay fecha de creación en `PRODUCTOS`. El campo `CHECADO_EN` no es alta; los eventos “Alta inicial de producto” del historial no son fecha de creación universal (130 productos tuvieron ventas válidas anteriores a ese evento).
+3. Hay 3,963 productos; 975 tienen `ELIMINADO_EN`. Los importes son `INT64` con escala `-4` en Firebird y se muestran con 4 decimales. Una venta de ejemplo de $86 concilia con cuatro renglones que suman 86. No hay conversión a centavos indicada; `MONEDA` está nula en los 161,163 tickets, por lo que la moneda formal debe confirmarse con el negocio.
+4. El historial de tickets abarca 2023-12-01 a 2026-10-18: 161,163 tickets, 268 cancelados y ninguno abierto en esta copia. Los 160,895 válidos suman $5,321,784.3098 y el mismo importe que sus renglones. Hay una línea sin ticket y 28,675 renglones válidos cuyo código no está en el catálogo actual.
+5. Hay 269 devoluciones por $10,420.97, pero solo una línea de devolución con producto/unidades. `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` están en cero/falso en todas las líneas de venta, y `VENTATICKETS.TOTAL_DEVUELTO` no refleja esos importes. No es posible obtener unidades netas por producto para la mayoría de las devoluciones.
+6. `DINVENTARIO` es nulo en los 3,963 productos. `INVENTARIO_BALANCES` es la fuente observable de existencia actual: 3,573 productos y un almacén. `INVENTARIO_HISTORIAL` tiene 261,644 eventos desde 2023-12-01; `HISTORIAL_INVENTARIO` está vacío. El historial reconstruye aproximadamente el saldo actual para la mayoría, pero hay 12 discrepancias en la conciliación del último movimiento.
+7. Retail Intelligence importa Excel agregado, no tickets. Su depuración de 60 días no considera fecha de alta ni suficiencia por producto. Se recomienda extractor por lotes separado, Firebird de solo lectura, staging, e importación idempotente a PostgreSQL; se requiere detalle transaccional para ventas y devoluciones auditables.
 
 ## 1. Método y límites de evidencia
 
 - Repositorio inspeccionado: entidades, `AppDbContext`, `ProductoService`, `ImportService`, controladores, esquema SQL declarado, configuración y harness de pruebas.
 - No se encontraron archivos de migración de EF Core en el repositorio rastreado. El esquema disponible es `database/schema/01_create_tables.sql`; también existe un script de seed.
 - Hay un archivo `.env` ignorado por Git. Sus valores no se exponen en este documento. `appsettings.json` contiene actualmente una cadena de conexión PostgreSQL con contraseña en texto claro; se recomienda retirarla del archivo fuente y suministrarla externamente antes de desplegar.
-- No se intentó escribir en ninguna base. El fallo del cliente se produjo antes de conectar. No se probaron contraseñas alternativas ni se alteró la instalación.
-- El repositorio no contiene muestras de exportaciones bajo `samples/` (directorio vacío/no hay archivos listados), por lo que tampoco se pudo validar el formato Excel con datos reales.
+- Todas las consultas a Eleventa fueron `SELECT` sobre `SET TRANSACTION READ ONLY`; no se hicieron cambios en Eleventa ni PostgreSQL.
+- No se encontraron archivos de migración de EF Core; el esquema se mantiene en scripts SQL. El repositorio tampoco contiene muestras de exportaciones bajo `samples/`.
 
 ## 2. Inventario de Retail Intelligence existente
 
@@ -68,47 +68,72 @@ El harness de integración documenta verificaciones del servicio de pedidos y de
 
 ## 3. A. Inventario del esquema Firebird
 
-**No completado:** no se pudieron leer los metadatos. La tabla siguiente es una lista de trabajo derivada del encargo, no un inventario confirmado.
+La consulta a `RDB$RELATIONS` encontró **79 tablas de usuario** y **ninguna vista**. Los seis procedimientos almacenados son `OBTEDOCUENTA`, `OBTEDOCUENTA2`, `OBTEDOCUENTA3`, `POS`, `YEARWEEK` y `YEAR_WEEK`; no se identificó que definan altas de producto. Los triggers de las tablas revisadas (`PRODUCTOS`, tickets, artículos e historiales) solo generan IDs; los triggers `CHECK_*` de productos son restricciones, no auditoría de creación.
 
-| Objeto | Columnas/clave/relaciones | Estado de evidencia |
-|---|---|---|
-| PRODUCTOS | Campos preliminares indicados en el encargo; PK, FK e índices pendientes. | No verificado en Firebird. |
-| VENTATICKETS | Campos preliminares de folio, tiempos, totales y estados; clave/relación pendientes. | No verificado. |
-| VENTATICKETS_ARTICULOS | Campos preliminares de ticket, código/nombre, cantidad, precios e indicadores de devolución; claves pendientes. | No verificado. |
-| INVENTARIO_BALANCES | Campos preliminares producto/cantidad/almacén; claves y granularidad pendientes. | No verificado. |
-| HISTORIAL_INVENTARIO, INVENTARIO_HISTORIAL | Existencia, columnas, equivalencia entre nombres y semántica pendientes. | No verificado. |
-| PROVEEDORES, DEPARTAMENTOS | Nombres preliminares; columnas y relación formal/inferida pendientes. | No verificado. |
-| Todas las demás tablas, vistas, triggers, procedimientos, índices y restricciones | Se obtendrán desde `RDB$...` con consultas 8.1–8.4. | No verificado. |
+Tablas de usuario encontradas (se listan todas; las marcadas con ** son centrales para esta integración):
 
-No debe asumirse que `HISTORIAL_INVENTARIO` e `INVENTARIO_HISTORIAL` son la misma tabla ni que las relaciones por nombre/código estén declaradas con FK.
+`ABONOS`, `ABONOS_ARTICULOS`, `ABONOS_VENTAS`, `ABONO_TICKETS`, `ALMACENES`**, `ARTICULOS_DE_OC`, `ARTICULO_COMPONENTES`, `CACHE`, `CAJAS`, `CLIENTES`, `CLIENTESV2`, `CLIENTESV2_CREDITO`, `CLIENTESV2_FACTURACION`, `CLIENTESV2_TAGS`, `COMISIONES_TARJETA`, `CONCILIACION_PAGO_SERVICIOS`, `CONFIGURACION`, `CORTE_IMPUESTOS_COBRADOS`, `CORTE_IMP_COBRADOS_OPERACION`, `CORTE_MOVIMIENTOS`, `CORTE_OPERACIONES`, `CORTE_VENTAS_DEPTO_OPERACIONES`, `CORTE_VENTAS_POR_DEPTO`, `CREDITOS_ABONOS`, `CREDITOS_ABONOS_ARTICULOS`, `CREDITOS_ABONOS_IMPUESTOS`, `CREDITOS_ABONOS_PAGOS`, `CREDITOS_ABONOS_VENTAS`, `CREDITOS_ARTICULOS_IMPUESTOS`, `CREDITOS_TRANSACCIONES`, `DEPARTAMENTOS`**, `DEVOLUCIONES`**, `DEVOLUCIONES_ARTICULOS`**, `DEVOLUCIONES_MERCADOPAGO`, `FACTURACION_CERTIFICADOS`, `FACTURACION_CLIENTES`, `FACTURACION_EMISORES`, `FACTURACION_FOLIOS`, `FACTURAS`, `FACTURAS_ABONOS`, `HISTORIAL_INVENTARIO`**, `IMPUESTOS`, `IMPUESTOS_REGLAS`, `INVENTARIO_AJUSTES`**, `INVENTARIO_APARTADO`, `INVENTARIO_BALANCES`**, `INVENTARIO_HISTORIAL`**, `INVENTARIO_RECIBOS`**, `INVENTARIO_RECIBOS_DETALLE`**, `LISTA_DE_COMPRA`, `MEDIDAS`, `MOVIMIENTOS`, `OPERACIONES`, `ORDENES_DE_COMPRA`, `PAGOS_MIXTOS`, `PRODUCTOS`**, `PRODUCTOS_BASE`, `PRODUCTOS_CFDI`, `PRODUCTOS_UDF_RECARGAS`, `PRODUCTOS_UDF_SERVICIOS`, `PRODUCTO_COMPONENTES`, `PROMOCIONES_POR_CANTIDAD`, `PROVEEDORES`**, `PROVEEDORES_BASE`, `REPORTE_ABONO_SERVICIOS`, `SCHEMA_DATA_INFO`, `SCHEMA_INFO`, `SINCRONIZACION_NUBE`, `SINCRONIZACION_VENTAS`, `TRANSACCIONES_MERCADOPAGO`, `TRANSACCIONES_PROSEPAGO`, `TURNOS`, `USUARIOS`, `VENTATICKETS`**, `VENTATICKETS_ARTICULOS`**, `VENTATICKETS_IMPUESTOS`**, `VENTA_DE_RECARGAS`, `VENTA_RECARGA`, `VENTA_SERVICIO`.
 
-## 4. B. Diccionario de datos provisional
+### Diccionario de columnas de las tablas relevantes
 
-La estructura y semántica de las columnas Eleventa siguen **sin validar**. Para los campos Retail Intelligence, los tipos se deducen de entidades y `01_create_tables.sql`.
+Los tipos corresponden a metadatos Firebird: `8` INTEGER, `7` SMALLINT, `10` FLOAT, `27` DOUBLE, `12` DATE, `35` TIMESTAMP, `14` CHAR, `37` VARCHAR, `16` INT64. `TMONEDA` es tipo `16`, escala `-4` (valor decimal con cuatro cifras de escala, no un entero en centavos). La escala `0` de `TCANTIDAD` no significa entero cuando el tipo es FLOAT/DOUBLE.
 
-| Dato | Tipo/destino actual | Significado confirmado en código | Nulos/transformación/confianza |
+| Tabla / función | Columnas (tipo Firebird / clave cuando aplica) |
+|---|---|
+| `PRODUCTOS`** catálogo | `ID` INTEGER PK; `CODIGO` VARCHAR(50) UNIQUE; `DESCRIPCION` VARCHAR(255); `TVENTA` CHAR; `PCOSTO`, `PVENTA`, `MAYOREO`, `PVENTA_ANTERIOR`, `PCOSTO_ANTERIOR`, `PMAYOREO_ANTERIOR`, `PFINAL`, `PMAYOREOFINAL` INT64 escala -4; `DEPT`, `PROVID`, `UMEDIDA`, `MEDIDA_ID` INTEGER; `IPRIORIDAD` SMALLINT; `DINVENTARIO`, `DINVMINIMO`, `DINVMAXIMO` DOUBLE; `CHECADO_EN` DATE; `PORCENTAJE_GANANCIA` INT64 escala -3; `IMPUESTOS` VARCHAR(255); `ES_KIT`, `USA_INVENTARIO` CHAR; `ELIMINADO_EN` TIMESTAMP. |
+| `VENTATICKETS`** cabecera | `ID` INTEGER PK; `FOLIO`, `CAJA_ID`, `CAJERO_ID`, `CLIENTE_ID`, `OPERACION_ID`, `FACTURA_ID`, `TURNO_ID`, `OLD_TICKET_ID`, `CLIENTESV2_ID`, `CLIENTESV2_CREDITO_ID`, `NUMERO_ARTICULOS` INTEGER; `NOMBRE` VARCHAR(50); `CREADO_EN`, `VENDIDO_EN`, `PAGADO_EN` TIMESTAMP; `SUBTOTAL`, `IMPUESTOS`, `TOTAL`, `GANANCIA`, `PAGO_CON`, `TOTAL_DEVUELTO`, `TOTAL_AHORRADO`, `TIPO_DE_CAMBIO`, `TOTAL_CREDITO`, `TOTAL_FACTURABLE`, `SALDO_CREDITO`, `IMPUESTOS_RETENIDOS` INT64 escala -4; `ESTA_ABIERTO`, `ESTA_CANCELADO`, `ES_MODIFICABLE`, `IMPRIMIR_NOTA`, `REFRESCAR_TICKET`, `ACTIVO`, `IMPRIMIR_DATOS_CLIENTE` CHAR; `MONEDA` CHAR(3); `FORMA_PAGO` CHAR(10); `REFERENCIA` VARCHAR(255); `NOTAS`, `NOTAS_AL_PIE` BLOB. No se observó FK desde `VENTATICKETS_ARTICULOS.TICKET_ID`. |
+| `VENTATICKETS_ARTICULOS`** detalle | `ID` INTEGER PK; `TICKET_ID`, `DEPARTAMENTO_ID` INTEGER; `PRODUCTO_CODIGO` VARCHAR(20); `PRODUCTO_NOMBRE` VARCHAR(255); `CANTIDAD`, `PORCENTAJE_DESCUENTO`, `CANTIDAD_DEVUELTA` FLOAT; `GANANCIA`, `IMPUESTO_UNITARIO`, `PRECIO_USADO`, `PRECIO_FINAL`, `TOTAL_ARTICULO` INT64 escala -4; `PAGADO_EN`, `AGREGADO_EN` TIMESTAMP; `USA_MAYOREO`, `FUE_DEVUELTO` CHAR; `IMPUESTOS_USADOS` VARCHAR(255); `PORCENTAJE_PAGADO` dominio TMONEDA_4_DECIMALES. |
+| `INVENTARIO_BALANCES`** estado actual | `PRODUCTO_ID` INTEGER FK → `PRODUCTOS.ID`; `CANTIDAD_ACTUAL` FLOAT; `ALMACEN_ID` INTEGER FK → `ALMACENES.ID`; índice único `PRODUCTO_ID` en este esquema. |
+| `INVENTARIO_HISTORIAL`** movimientos | `ID` INTEGER PK; `PRODUCTO_ID`, `AJUSTE_ID`, `RECIBO_INVENTARIO_ID`, `VENTA_ID`, `TRANSFERENCIA_ID`, `CAJA_ID`, `USUARIO_ID`, `ALMACEN_ID` INTEGER; `CUANDO_FUE` TIMESTAMP; `CANTIDAD_ANTERIOR`, `CANTIDAD` FLOAT; `DESCRIPCION` VARCHAR(255); `COSTO_UNITARIO`, `COSTO_DESPUES` INT64 escala -4; `VENTA_POR_KIT` CHAR. FK declaradas para `PRODUCTO_ID` y `ALMACEN_ID`. |
+| `HISTORIAL_INVENTARIO`** historial antiguo | `ID`, `USUARIO_ID`, `CAJA_ID`, `TURNO_ID` INTEGER; `CUANDO_FUE` TIMESTAMP; `TIPO` CHAR; `HABIA`, `CANTIDAD` FLOAT; `CODIGO_PRODUCTO` VARCHAR(20). No tiene FK de producto; está vacío en esta copia. |
+| `DEVOLUCIONES`** cabecera | `ID`, `TURNO_ID`, `TICKET_ID` INTEGER; `TIPO_DEVOLUCION` CHAR; `PAGADO_EN`, `DEVUELTO_EN`, `SINCRONIZADO_EN` TIMESTAMP; `CAJERO`, `CAJA` VARCHAR(50); `TOTAL_DEVUELTO` INT64 escala -4. |
+| `DEVOLUCIONES_ARTICULOS`** detalle | `ID`, `DEVOLUCION_ID`, `TICKET_ID` INTEGER; `CODIGO_PRODUCTO` VARCHAR(20); `DESCRIPCION_PRODUCTO` VARCHAR(255); `CANTIDAD_DEVUELTA`, `INVENTARIO_POST_DEVOLUCION` DOUBLE; `DINERO_DEVUELTO` INT64 escala -4. |
+| `INVENTARIO_AJUSTES`** ajustes | `ID`, `FOLIO`, `PRODUCTO_ID`, `CAJA_ID`, `USUARIO_ID`, `ALMACEN_ID` INTEGER; `CUANDO_FUE` TIMESTAMP; `CANTIDAD` FLOAT; `COSTO_UNITARIO` INT64 escala -4; `DESCRIPCION`, `MOTIVO` VARCHAR(255). |
+| `INVENTARIO_RECIBOS`** recibos | `ID`, `FOLIO`, `ORDEN_DE_COMPRA_ID`, `CAJA_ID`, `USUARIO_ID`, `ALMACEN_ID` INTEGER; `RECIBIDO_EN` TIMESTAMP. |
+| `INVENTARIO_RECIBOS_DETALLE`** detalle de recepción | `INVENTARIO_RECIBO_ID`, `SECUENCIA`, `PRODUCTO_ID` INTEGER; `CANTIDAD_RECIBIDA` FLOAT; `COSTO_UNITARIO` INT64 escala -4. |
+| `VENTATICKETS_IMPUESTOS`** impuestos de venta | `ID`, `VENTA_ID`, `IMPUESTO_ID` INTEGER; `IMPUESTO_PORCENTAJE`, `IMPUESTO_BASE`, `IMPUESTO_MONTO` INT64 escala -4. |
+| `DEPARTAMENTOS`** | `ID` INTEGER PK; `NOMBRE` VARCHAR(255); `PORCENTAJE_IMPUESTO` SMALLINT; `ACTIVO` CHAR. Restricción UNIQUE compuesta `NOMBRE, ACTIVO`. |
+| `PROVEEDORES`** | `ID` INTEGER PK; `NOMBRE` VARCHAR(50); `REPRESENTANTE`, `TELEFONOS`, `CORREOS` VARCHAR(255); `PAGINA_WEB` VARCHAR(50); `NOTAS` BLOB; `BORRADO_EN` TIMESTAMP. |
+| `ALMACENES`** | `ID` INTEGER PK; `NOMBRE` VARCHAR(255). |
+| `PRODUCTOS_BASE` | Solo `CODIGO` y `DESCRIPCION`; no contiene fecha de alta ni ID relacionado declarado. |
+
+Las relaciones declaradas observadas son balances e historial de inventario hacia producto/almacén. **No** se declararon FK desde `PRODUCTOS.DEPT` a departamentos, `PRODUCTOS.PROVID` a proveedores, ni desde líneas a tickets/productos; esas relaciones son convenciones inferidas. `PRODUCTOS.ID` y `CODIGO` tienen PK/UNIQUE. Tickets y líneas tienen PK por `ID`; no se encontró UNIQUE por `FOLIO` o pareja ticket/línea. Las filas huérfanas de datos confirman que no debe dependerse de integridad no declarada.
+
+Índices relevantes: PK/índice único de código en productos; índice de tickets por `VENDIDO_EN` y otros por folio/estado/caja; líneas por `TICKET_ID`, `(PRODUCTO_CODIGO,TICKET_ID)` y `FUE_DEVUELTO`; balances por `PRODUCTO_ID` (único); historial por PK y claves de producto/almacén. No se encontró índice único de artículo por código+ticket.
+
+## 4. B. Diccionario de datos
+
+| Origen | Tipo y significado comprobado | Calidad/transformación hacia Retail Intelligence | Confianza |
 |---|---|---|---|
-| Producto código | `productos.codigo VARCHAR(30) NOT NULL UNIQUE`; `Producto.Codigo string` | Clave lógica usada por Excel para localizar producto. | Origen Eleventa aún desconocido. Preservar texto, espacios y ceros iniciales; normalizar solo tras medir colisiones. Alta confianza sobre destino. |
-| Nombre | `VARCHAR(250) NOT NULL` | Nombre mostrado. | Origen y truncamiento pendientes. |
-| Costo/precio vigente | `NUMERIC(10,2) NOT NULL`; propiedades `decimal` | Importador asigna costo y precio leídos de Excel. | Unidad del dato Eleventa no conocida; no convertir sin evidencia. |
-| Stock mínimo/máximo | `NUMERIC(10,2) NOT NULL` | Campos del catálogo destino; importador actual deja valores 0. | Correspondencia Eleventa no validada. |
-| Existencia | `inventarios.existencia NUMERIC(10,2) NOT NULL`; fila vinculada a importación | Snapshot importado; depuración suma filas del snapshot más reciente. | `ALMACEN_ID` no está representado actualmente. Definir si sumar almacenes después de comprobar granularidad. |
-| Venta por producto/período | cantidad, precio, costo, importe `NUMERIC(10,2)` | Agregado cargado desde Excel. | No soporta primera/última fecha ni devoluciones a nivel detalle. |
-| Alta de origen | **No existe campo** en entidad `Producto`. `CreatedAt` es timestamp de creación local. | No es el alta de Eleventa. | Propuesta futura: `fecha_alta_origen NULL`, `fuente_fecha_alta`, `confianza_fecha_alta`; fecha UTC/local y precisión se definirán al validar el origen. |
-| Activo/eliminado | `Producto.Activo`, `Producto.Descontinuado` booleanos | Estado local, sin mapeo automático de Eleventa observado. | No inferir borrado físico/lógico. |
+| `PRODUCTOS.ID` | INTEGER PK. | Guardar como ID de origen estable dentro de esta instancia. | Alta |
+| `PRODUCTOS.CODIGO` | VARCHAR(50), UNIQUE; valores actuales de 1–20 caracteres. Clave de negocio presente en catálogo. | Conservar como texto literal, no quitar ceros ni normalizar case a ciegas. `PRODUCTO_CODIGO` en artículos es VARCHAR(20); los valores actuales llegan a 20. No hay colisiones por `UPPER(TRIM(CODIGO))`; hay códigos históricos sin match al catálogo actual. Mantener mapa ID↔código y código crudo histórico. | Alta sobre tipo/unicidad; media sobre estabilidad temporal |
+| `PRODUCTOS.DESCRIPCION` | VARCHAR(255). | Mapear a `Producto.Nombre` (destino 250): rechazar o truncar solo con reporte explícito. | Alta |
+| `PCOSTO`, `PVENTA` | INT64 escala -4. Muestras: costos 18.0000 y precios 21.6000; la venta de cuatro artículos a 20+13+28+25 concilia con ticket total 86. | Persistir como decimal sin dividir entre 100. El valor de negocio parece pesos, pero `VENTATICKETS.MONEDA` es NULL en todos los tickets: confirmar la divisa con el propietario antes de fijar moneda. | Alta para escala; media para divisa |
+| `DINVENTARIO` | DOUBLE nullable en catálogo. | Nulo en los 3,963 productos observados. No utilizar como existencia actual. | Alta |
+| `INVENTARIO_BALANCES.CANTIDAD_ACTUAL` | FLOAT por `PRODUCTO_ID` y `ALMACEN_ID`; 3,573 filas, un almacén. | Es snapshot actual observado. Conservar almacén. FLOAT causa pequeños residuos como -1.14e-8; definir tolerancia/cero en validación, no inventar unidades. | Alta |
+| `VENTATICKETS.VENDIDO_EN`, `CREADO_EN`, `PAGADO_EN` | TIMESTAMP sin zona; los tres momentos existen. | Usar `VENDIDO_EN` para fecha efectiva de ticket cerrado y no cancelado; conservar `CREADO_EN`/`PAGADO_EN` para auditoría. El archivo no almacena timezone. | Alta para tipo/valores; semántica por validar con operación |
+| `VENTATICKETS_ARTICULOS.CANTIDAD` | FLOAT; admite fracciones (ventas por peso observadas). | Decimal destino; evitar redondeo a entero. | Alta |
+| `PRECIO_USADO`, `PRECIO_FINAL`, `TOTAL_ARTICULO`, ticket `TOTAL` | INT64 escala -4. | El total de líneas válidas coincide con el total de tickets en la muestra completa; 2,747 líneas difieren de `cantidad × precio_final` por cantidades fraccionarias y redondeo. Para importe usa el importe persistido, no recalcularlo ciegamente. | Alta |
+| Estados de ticket | `ESTA_ABIERTO`, `ESTA_CANCELADO` CHAR con valores observados `t/f`. | Válido: ambos `f`. La copia tiene 268 cancelados y 0 abiertos. | Alta |
+| `DEVOLUCIONES.TOTAL_DEVUELTO` | INT64 escala -4, cabecera de devolución ligada por `TICKET_ID`. | Hay 269 devoluciones por 10,420.9700; no se refleja en `VENTATICKETS.TOTAL_DEVUELTO`. No restar ambos. | Alta |
+| `DEVOLUCIONES_ARTICULOS` | Detalle de artículo; solo 1 renglón observado. | Para esa fila hay código, cantidad 1 y dinero 15. Para las otras 268 cabeceras no se puede asignar devolución a producto. | Alta |
+| `PRODUCTOS.ELIMINADO_EN` | TIMESTAMP nullable. | 975 productos con marca de eliminación. Mapear como estado lógico/fecha de baja, sin borrar la entidad histórica. | Alta sobre presencia; confirmar comportamiento funcional |
+| `PRODUCTOS.USA_INVENTARIO`, `TVENTA` | CHAR. Valores observados `t/f` en usa inventario y `U/D` en tipo de venta. | No equiparar `USA_INVENTARIO=f` con inventario cero: 52 productos con flag falso sí tienen balance; dos con flag verdadero no. | Alta sobre valores, media sobre semántica |
 
 ## 5. C. Fecha de alta de productos
 
-**Resultado:** no se puede concluir si existe en Eleventa. En Retail Intelligence, `Producto.CreatedAt` se asigna al momento de crear el producto durante la importación Excel (`DateTime.UtcNow`), y por tanto no sirve como fecha original de alta. Tampoco existe una propiedad de origen separada.
+**Resultado comprobado:** `PRODUCTOS` no contiene campo de creación/alta. Sus dos columnas temporales son `CHECADO_EN` (DATE) y `ELIMINADO_EN` (TIMESTAMP); `CHECADO_EN` no debe tratarse como alta. El trigger `PRODUCTOS_BI` únicamente asigna el ID.
 
-Validar nombres y tipos candidatos con la consulta 8.5. Si no hay fecha explícita en `PRODUCTOS`, revisar triggers, procedimientos, tablas de auditoría/historial y registros de eventos que enlacen inequívocamente ID de producto con evento de creación. Un campo de modificación no prueba alta; la primera venta solo establece que existía a más tardar en esa fecha. Si ninguna fuente lo acredita, informar `NULL`/desconocido. No utilizar fecha de respaldo de base de datos ni primera venta como fecha de alta.
+`INVENTARIO_HISTORIAL` aporta evidencia auxiliar, no una fecha de alta universal: contiene 261,644 eventos para 3,573 productos; 2,032 tienen como primer evento “Alta inicial de producto”, 1,532 comienzan con “Producto modificado, comienzo de uso de inventario”, otros 9 comienzan con otro evento y 390 productos no tienen historial. En 130 productos con “Alta inicial de producto” hubo ventas válidas anteriores al evento. Por ello, el evento registra alta/activación de inventario, no demuestra de forma fiable cuándo se creó el registro de catálogo. Puede persistirse como `primera_fecha_inventario_observada` con su evidencia, pero no como `fecha_alta_origen`.
+
+La primera venta conocida solo demuestra que el producto ya existía a más tardar entonces. Para los productos sin fecha explícita, el alta real debe quedar `NULL`; no sustituirla por `CHECADO_EN`, `AGREGADO_EN` de la línea, fecha del primer movimiento de inventario, primera venta ni fecha de restauración.
 
 Diseño recomendado cuando se implemente:
 
 | Propiedad conceptual | Regla |
 |---|---|
-| `fecha_alta_origen` nullable | Solo fecha/hora explícita o evento de creación demostrable; conservar precisión/zona interpretada. |
-| `fecha_alta_fuente` | Ej. `Eleventa.PRODUCTOS.CREADO_EN`, auditoría, importación manual verificada, desconocida. |
+| `fecha_alta_origen` nullable | NULL con la evidencia actual; solo poblarla cuando una fuente futura confirme la creación del producto. |
+| `fecha_alta_fuente` | Nombre de columna/evento exacto; si es desconocido, registrar `desconocida`. |
 | `fecha_alta_confianza` | `verificada`, `derivada` (con método documentado) o `desconocida`; no ocultar inferencias. |
 | `created_at` | Sigue representando creación del registro Retail Intelligence. |
 
@@ -125,41 +150,44 @@ Para escenarios A–D: A → Nuevo si fecha válida, en caso contrario Informaci
 
 ## 6. D. Historial de ventas
 
-### Hallazgos y puntos pendientes
+`VENTATICKETS.ID` es PK y `VENTATICKETS_ARTICULOS.TICKET_ID` enlaza por convención con ella, sin FK declarada. Se encontró una línea huérfana entre 262,923 líneas. `PRODUCTO_CODIGO` es una copia textual del código en la línea, no FK ni ID; 718 códigos distintos (28,675 líneas válidas) no aparecen en el catálogo actual. No se deben descartar estas líneas ni asignarlas por nombre sin reconciliación.
 
-El modelo actual solo conserva cantidades/importes agregados por producto e importación/período. Firebird debe determinar ticket, línea, fecha efectiva, cancelación y devolución. No se ha comprobado si `VENDIDO_EN` es la fecha válida, si tickets cancelados conservan líneas, ni si `CANTIDAD_DEVUELTA` se refleja también en importe devuelto.
+`VENDIDO_EN` es el mejor campo de fecha efectiva observado: hay 161,163 tickets entre 2023-12-01 12:25 y 2026-10-18 22:11; las líneas válidas tienen fecha. Excluir siempre `ESTA_ABIERTO='t'` y `ESTA_CANCELADO='t'`. En esta copia hay 268 cancelados y ninguno abierto; quedan 160,895 válidos. `CREADO_EN` es distinto de `VENDIDO_EN` y no se deben confundir.
 
-Antes de calcular ventas netas, comprobar si las líneas devueltas permanecen como cantidad original con columna de devolución, si una devolución tiene renglón separado, qué precisión admite cantidad y si `TOTAL_ARTICULO` es bruto, neto, impuestos incluidos o importe antes/después de descuento. No restar devolución dos veces.
+Los 262,514 renglones asociados a tickets válidos suman 348,891.734 unidades brutas y `TOTAL_ARTICULO` suma 5,321,784.3098. El importe coincide exactamente con la suma de `VENTATICKETS.TOTAL` en los tickets válidos. 2,747 renglones difieren de `CANTIDAD × PRECIO_FINAL`; los ejemplos son cantidades fraccionarias por peso (p.ej. 0.0455 × 110 = 5.005 registrado como 5.00). Utilizar `TOTAL_ARTICULO` como importe registrado; no recalcular el neto por simple multiplicación.
 
-La consulta 8.7 es una plantilla diagnóstica **condicionada** a que se confirmen los nombres/tipos preliminares. Debe adaptarse con las columnas reales antes de ejecutarse. Para sincronización durable se recomienda importar línea por ticket con ID origen, fecha efectiva, cantidad bruta, cantidad devuelta, unidades netas e importe neto validado; índices únicos por `(origen, ticket_id, linea_id)` o clave estable equivalente harán idempotencia posible.
+**Devoluciones:** la tabla `DEVOLUCIONES` tiene 269 cabeceras, todas ligadas a ticket, por total 10,420.97. `DEVOLUCIONES_ARTICULOS` tiene solo 1 detalle (un producto, una unidad, 15.00). Las columnas `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` de líneas están en cero/falso; `VENTATICKETS.TOTAL_DEVUELTO` suma cero. Por tanto, descontar devolución a nivel ticket sí es posible para importe global si se aplica una vez por cabecera, pero unidades/importe neto por producto **no** pueden calcularse para 268 documentos con los datos actuales. No repartir esos importes entre productos por prorrateo sin una regla contable verificada.
+
+Para reportes de producto se puede calcular primera/última venta, tickets válidos, unidades brutas y total bruto por código. Las unidades netas por código solo serían exactas en filas con detalle de devolución; para el resto deben marcarse incompletas. La consulta 8.7 devuelve métricas brutas y exposición separada a devoluciones.
 
 ## 7. Inventario, importes y calidad
 
 ### Inventario
 
-No se puede establecer si `PRODUCTOS.DINVENTARIO`, `INVENTARIO_BALANCES` o el historial es fuente autoritativa sin consultar conteos y muestras. La consulta 8.9 compara balances por producto/almacén y el valor del catálogo una vez confirmadas columnas. No sumar `DINVENTARIO` y balance hasta probar si son fuentes duplicadas/alternativas. Para existencia actual, elegir el snapshot con semántica documentada y el almacén correcto; el modelo destino actual no almacena almacén.
+`DINVENTARIO` es DOUBLE pero está nulo en todos los 3,963 productos. `INVENTARIO_BALANCES` contiene 3,573 productos, cada uno con un único almacén en la copia (almacén 1) y está enlazado formalmente con productos y almacenes; esta es la mejor fuente de existencia actual. Hay 390 productos sin fila de balance. `USA_INVENTARIO` no sustituye ese dato: dos productos marcados `t` carecen de balance y 52 marcados `f` sí tienen balance.
+
+`HISTORIAL_INVENTARIO` está vacío. `INVENTARIO_HISTORIAL` tiene 261,644 eventos, desde 2023-12-01 hasta 2026-10-18, con producto, almacén, fecha, cantidad previa, cantidad del movimiento, descripción y referencias a venta/ajuste/recibo. En eventos con descripción `Venta #...`, el movimiento positivo debe restarse del saldo previo; los demás movimientos conservan su signo. Comparando el último evento por producto/almacén con el balance actual con tolerancia 0.0001, aparecen 12 discrepancias (8 en últimos eventos de venta y 4 en otros). El historial parece útil para reconstruir desde que comienza el seguimiento de cada artículo, pero no garantiza existencias anteriores al primer evento; usar balance para el presente y auditar los 12 casos antes de confiar en reconstrucciones históricas.
 
 ### Moneda y calidad
 
-No se infiere pesos frente a centavos a partir del tipo `BIGINT`. Validar en una misma fila producto/precio y ticket/línea: coherencia `cantidad × precio` frente a importe, así como casos conocidos/manuales. Conservar valores brutos y comparar tolerancias; revisar subtipos/escala Firebird en metadatos.
+Los importes no son BIGINT de centavos: los metadatos muestran INT64 con escala -4, y valores como PVENTA 21.6000 o precio final 20.0000 se concilian directamente con líneas y ticket total. La moneda explícita está nula en los 161,163 tickets; la escala/valor es verificable, la divisa (probablemente MXN por el contexto, pero no codificada en esta copia) debe confirmarse.
 
-Validaciones pendientes: nulos, cantidades fraccionarias, códigos con ceros/espacios/case, longitudes distintas, duplicados, tickets huérfanos, productos huérfanos, devoluciones mayores a cantidad, fechas fuera de rango, productos eliminados lógicamente y duplicidad de inventario por almacén.
+`PRODUCTOS.CODIGO` está limitado a VARCHAR(50), mientras `VENTATICKETS_ARTICULOS.PRODUCTO_CODIGO` es VARCHAR(20). No se observaron códigos vacíos ni espacios al final en artículos; existen códigos cortos/mixtos y códigos que no están en catálogo vigente. La PK/FK protege parcialmente balances, pero no líneas. 975 productos tienen `ELIMINADO_EN`; 3,939 de 3,963 tienen `PROVID=-1`, y solo 16 apuntan a un proveedor existente. Todos los `DEPT` observados apuntan a un departamento existente, aunque sin FK.
 
 ## 8. Consultas de diagnóstico Firebird 2.0 (solo lectura)
 
-Ejecutar con `isql` en la copia restaurada. No ejecutar DML/DDL. Primero confirmar cliente compatible y establecer transacción `READ ONLY`. Las consultas de datos que nombran campos preliminares se deben correr **solo después** de verificar esos campos con el catálogo.
+Las consultas se ejecutaron con la conexión local `localhost:C:\EleventaRestore\ELEVENTA_TEST.FDB` y `SET TRANSACTION READ ONLY`. No requieren abrir Eleventa. Primero inspeccionar metadatos; las consultas siguientes ya usan columnas confirmadas en esta copia.
 
 ### 8.1 Relaciones de usuario
 
 ```sql
-SELECT TRIM(RDB$RELATION_NAME) AS RELATION_NAME,
-       CASE WHEN RDB$VIEW_BLR IS NULL THEN 'TABLE' ELSE 'VIEW' END AS OBJECT_TYPE
+SELECT TRIM(RDB$RELATION_NAME) AS RELATION_NAME
 FROM RDB$RELATIONS
 WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0
 ORDER BY RDB$RELATION_NAME;
 ```
 
-Enumera tablas y vistas no sistema.
+Enumera objetos de usuario; la copia devolvió 79 relaciones y ninguna vista (`RDB$VIEW_BLR` no configurado).
 
 ### 8.2 Columnas y tipos
 
@@ -167,13 +195,11 @@ Enumera tablas y vistas no sistema.
 SELECT TRIM(RF.RDB$RELATION_NAME) AS TABLE_NAME,
        RF.RDB$FIELD_POSITION AS ORDINAL_POSITION,
        TRIM(RF.RDB$FIELD_NAME) AS COLUMN_NAME,
-       TRIM(F.RDB$FIELD_NAME) AS DOMAIN_NAME,
+       TRIM(RF.RDB$FIELD_SOURCE) AS DOMAIN_NAME,
        F.RDB$FIELD_TYPE AS FIELD_TYPE_CODE,
        F.RDB$FIELD_SUB_TYPE AS FIELD_SUBTYPE,
        F.RDB$FIELD_LENGTH AS FIELD_LENGTH,
-       F.RDB$FIELD_PRECISION AS FIELD_PRECISION,
        F.RDB$FIELD_SCALE AS FIELD_SCALE,
-       F.RDB$CHARACTER_LENGTH AS CHARACTER_LENGTH,
        RF.RDB$NULL_FLAG AS NOT_NULL_FLAG
 FROM RDB$RELATION_FIELDS RF
 JOIN RDB$FIELDS F ON F.RDB$FIELD_NAME = RF.RDB$FIELD_SOURCE
@@ -181,7 +207,7 @@ WHERE RF.RDB$RELATION_NAME NOT STARTING WITH 'RDB$'
 ORDER BY RF.RDB$RELATION_NAME, RF.RDB$FIELD_POSITION;
 ```
 
-Mapea columnas a dominios y códigos de tipo; interpretar `FIELD_TYPE_CODE` usando la tabla de códigos Firebird 2.0 (por ejemplo, integer, bigint, date, time, timestamp, text, varying, blob) y escala/subtipo para numéricos.
+Mapea todas las columnas a dominios y tipos Firebird; el código y escala muestran, por ejemplo, INT64 escala -4 para moneda y FLOAT/DOUBLE para cantidades.
 
 ### 8.3 PK, FK, UNIQUE e índices
 
@@ -248,7 +274,7 @@ FROM RDB$PROCEDURES
 WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0;
 ```
 
-Busca lógica de alta, actualización, cierre de venta e inventario en el código de triggers/procedimientos; no ejecuta procedimientos.
+Busca lógica de alta, actualización, cierre de venta e inventario en triggers/procedimientos; no ejecuta procedimientos. En esta copia hay seis procedimientos (`OBTEDOCUENTA*`, `POS`, `YEARWEEK`, `YEAR_WEEK`) y los triggers `*_BI` inspeccionados asignan IDs.
 
 ### 8.5 Fechas candidatas y evidencia de alta
 
@@ -269,17 +295,16 @@ WHERE UPPER(RF.RDB$FIELD_NAME) CONTAINING 'FECHA'
 ORDER BY RF.RDB$RELATION_NAME, RF.RDB$FIELD_POSITION;
 ```
 
-Localiza nombres candidatos en todas las relaciones. Inspeccionar DDL fuente de triggers/procedimientos y tabla de auditoría antes de calificar cualquiera como alta confiable. Después, obtener muestras de `PRODUCTOS` usando solo las columnas confirmadas por 8.2.
+Localiza nombres candidatos en todas las relaciones. En `PRODUCTOS` los candidatos temporales reales son `CHECADO_EN` y `ELIMINADO_EN`; no hay nombre candidato de creación. El historial de inventario se evaluó por separado y no equivale a alta universal.
 
-### 8.6 Datos básicos (adaptar tras inspección)
+### 8.6 Datos básicos
 
 ```sql
-/* Solo si 8.2 confirma PRODUCTOS.ID, CODIGO, DESCRIPCION, PCOSTO y PVENTA. */
-SELECT FIRST 50 ID, CODIGO, DESCRIPCION, PCOSTO, PVENTA
+SELECT FIRST 50 ID, CODIGO, DESCRIPCION, PCOSTO, PVENTA,
+       DINVENTARIO, DEPT, PROVID, CHECADO_EN, ELIMINADO_EN
 FROM PRODUCTOS
 ORDER BY ID;
 
-/* Solo si confirma los nombres del prompt. */
 SELECT FIRST 100 ID, FOLIO, CREADO_EN, VENDIDO_EN, TOTAL,
        GANANCIA, ESTA_ABIERTO, ESTA_CANCELADO, TOTAL_DEVUELTO
 FROM VENTATICKETS
@@ -288,51 +313,44 @@ ORDER BY VENDIDO_EN DESC;
 
 Permite revisar valores reales, nulos, rangos y fechas extremas sin modificar.
 
-### 8.7 Ventas por producto (plantilla condicionada)
-
-Ejecutar solo después de confirmar todas las columnas del prompt, significado de `VENDIDO_EN`, estado final y fórmula de devolución. La plantilla usa `PRODUCTO_CODIGO` como vínculo inferido; si existe ID de producto en línea, preferir relación formal.
+### 8.7 Ventas por producto y período
 
 ```sql
-/* Plantilla: validar columnas y reglas antes de ejecutar. */
 SELECT A.PRODUCTO_CODIGO,
        MIN(T.VENDIDO_EN) AS PRIMERA_VENTA,
        MAX(T.VENDIDO_EN) AS ULTIMA_VENTA,
        COUNT(DISTINCT T.ID) AS TICKETS_VALIDOS,
        SUM(A.CANTIDAD) AS UNIDADES_BRUTAS,
-       SUM(COALESCE(A.CANTIDAD_DEVUELTA, 0)) AS UNIDADES_DEVUELTAS,
-       SUM(A.CANTIDAD - COALESCE(A.CANTIDAD_DEVUELTA, 0)) AS UNIDADES_NETAS,
-       SUM(A.TOTAL_ARTICULO) AS IMPORTE_BRUTO_CANDIDATO,
-       SUM(A.TOTAL_ARTICULO *
-           (A.CANTIDAD - COALESCE(A.CANTIDAD_DEVUELTA, 0)) / NULLIF(A.CANTIDAD, 0))
-           AS IMPORTE_NETO_PRO_RATA_CANDIDATO
+       SUM(COALESCE(A.CANTIDAD_DEVUELTA, 0)) AS DEVUELTAS_MARCADAS_EN_LINEA,
+       SUM(A.CANTIDAD - COALESCE(A.CANTIDAD_DEVUELTA, 0)) AS NETO_SEGUN_LINEA_INCOMPLETO,
+       SUM(A.TOTAL_ARTICULO) AS IMPORTE_BRUTO_REGISTRADO
 FROM VENTATICKETS_ARTICULOS A
 JOIN VENTATICKETS T ON T.ID = A.TICKET_ID
-WHERE COALESCE(T.ESTA_ABIERTO, 0) = 0
-  AND COALESCE(T.ESTA_CANCELADO, 0) = 0
+WHERE T.ESTA_ABIERTO = 'f'
+  AND T.ESTA_CANCELADO = 'f'
 GROUP BY A.PRODUCTO_CODIGO
 ORDER BY A.PRODUCTO_CODIGO;
 ```
 
-El prorrateo de importe es una hipótesis diagnóstica, no una regla contable aprobada. Comparar con campos/filas de devolución; excluir productos netos <= 0 si se requiere “venta” como movimiento positivo. En Firebird SQL, verificar compatibilidad exacta de `NULLIF`/tipos en el dialecto instalado y castear a `DOUBLE PRECISION` o precisión decimal adecuada si la división entera fuese posible.
+Las columnas de devolución de líneas están vacías en esta copia y hay 268 devoluciones sin detalle de producto: `NETO_SEGUN_LINEA_INCOMPLETO` **no** es neto real para esos casos. Para agrupar por día, usa `CAST(T.VENDIDO_EN AS DATE)`; para semana, mes y año, incluye `EXTRACT(WEEK FROM T.VENDIDO_EN)`, `EXTRACT(MONTH FROM T.VENDIDO_EN)` y `EXTRACT(YEAR FROM T.VENDIDO_EN)` en el `SELECT`/`GROUP BY`.
 
 ### 8.8 Intervalo histórico, duplicados y relaciones rotas
 
 ```sql
-/* Solo si se confirman VENDIDO_EN y estados. */
 SELECT MIN(VENDIDO_EN) AS PRIMER_TICKET,
        MAX(VENDIDO_EN) AS ULTIMO_TICKET,
-       COUNT(*) AS TICKETS,
-       SUM(CASE WHEN COALESCE(ESTA_CANCELADO, 0) <> 0 THEN 1 ELSE 0 END) AS CANCELADOS,
-       SUM(CASE WHEN COALESCE(ESTA_ABIERTO, 0) <> 0 THEN 1 ELSE 0 END) AS ABIERTOS
+       COUNT(*) AS TICKETS
 FROM VENTATICKETS;
 
-/* Solo si se confirma PRODUCTOS.CODIGO. Detecta duplicados exactos. */
-SELECT CODIGO, COUNT(*) AS CUANTOS
+SELECT COUNT(*) AS CANCELADOS FROM VENTATICKETS WHERE ESTA_CANCELADO='t';
+SELECT COUNT(*) AS ABIERTOS FROM VENTATICKETS WHERE ESTA_ABIERTO='t';
+
+/* Detecta códigos duplicados tras normalizar solo para diagnóstico. */
+SELECT UPPER(TRIM(CODIGO)) AS CODIGO_NORMALIZADO, COUNT(*) AS CUANTOS
 FROM PRODUCTOS
-GROUP BY CODIGO
+GROUP BY UPPER(TRIM(CODIGO))
 HAVING COUNT(*) > 1;
 
-/* Solo si se confirman los campos y no hay una FK equivalente. */
 SELECT COUNT(*) AS LINEAS_SIN_TICKET
 FROM VENTATICKETS_ARTICULOS A
 LEFT JOIN VENTATICKETS T ON T.ID = A.TICKET_ID
@@ -344,12 +362,11 @@ LEFT JOIN PRODUCTOS P ON P.CODIGO = A.PRODUCTO_CODIGO
 WHERE P.ID IS NULL;
 ```
 
-Para duplicados ignorando espacios/case, ejecutar además agrupación por `UPPER(TRIM(CODIGO))` y reportar colisiones antes de normalizar.
+La consulta normalizada no devuelve filas en esta copia; `CODIGO` también tiene un UNIQUE formal. La consulta de líneas huérfanas devuelve 1 ticket inexistente y 28,715 códigos fuera del catálogo considerando toda la historia (28,675 líneas de tickets válidos).
 
-### 8.9 Inventario y monetarios (plantillas condicionadas)
+### 8.9 Inventario, devoluciones y monetarios
 
 ```sql
-/* Solo si se confirman columnas preliminares. Comparar por producto y almacén; no sumar DINVENTARIO con balances. */
 SELECT B.PRODUCTO_ID, B.ALMACEN_ID,
        B.CANTIDAD_ACTUAL AS CANTIDAD_BALANCE,
        P.DINVENTARIO AS CANTIDAD_CATALOGO
@@ -357,29 +374,71 @@ FROM INVENTARIO_BALANCES B
 JOIN PRODUCTOS P ON P.ID = B.PRODUCTO_ID
 ORDER BY B.PRODUCTO_ID, B.ALMACEN_ID;
 
-/* Muestra para contrastar precio de catálogo y precio/importe de línea con casos reales conocidos. */
-SELECT FIRST 100 P.CODIGO, P.PVENTA,
-       A.CANTIDAD, A.PRECIO_USADO, A.PRECIO_FINAL,
-       A.TOTAL_ARTICULO,
-       A.CANTIDAD * A.PRECIO_FINAL AS CANTIDAD_POR_PRECIO_FINAL
-FROM PRODUCTOS P
-JOIN VENTATICKETS_ARTICULOS A ON A.PRODUCTO_CODIGO = P.CODIGO;
+SELECT COUNT(*) AS BALANCES, COUNT(DISTINCT PRODUCTO_ID) AS PRODUCTOS,
+       COUNT(DISTINCT ALMACEN_ID) AS ALMACENES,
+       MIN(CANTIDAD_ACTUAL) AS MINIMO, MAX(CANTIDAD_ACTUAL) AS MAXIMO,
+       SUM(CANTIDAD_ACTUAL) AS TOTAL
+FROM INVENTARIO_BALANCES;
+
+SELECT COUNT(*) AS EVENTOS, MIN(CUANDO_FUE) AS PRIMERO,
+       MAX(CUANDO_FUE) AS ULTIMO
+FROM INVENTARIO_HISTORIAL;
+
+SELECT COUNT(*) AS DEVOLUCIONES, SUM(TOTAL_DEVUELTO) AS MONTO
+FROM DEVOLUCIONES;
+SELECT COUNT(*) AS DETALLES_DEVOLUCION,
+       SUM(CANTIDAD_DEVUELTA) AS UNIDADES,
+       SUM(DINERO_DEVUELTO) AS MONTO
+FROM DEVOLUCIONES_ARTICULOS;
+
+/* Conciliación del último evento. En “Venta #” CANTIDAD es una salida y se resta. */
+SELECT COUNT(*) AS DIFERENCIAS_ULTIMO_MOVIMIENTO
+FROM INVENTARIO_BALANCES B
+JOIN (SELECT PRODUCTO_ID, ALMACEN_ID, MAX(ID) AS LAST_ID
+      FROM INVENTARIO_HISTORIAL GROUP BY PRODUCTO_ID, ALMACEN_ID) X
+  ON X.PRODUCTO_ID=B.PRODUCTO_ID AND X.ALMACEN_ID=B.ALMACEN_ID
+JOIN INVENTARIO_HISTORIAL H ON H.ID=X.LAST_ID
+WHERE (H.DESCRIPCION STARTING WITH 'Venta'
+       AND (B.CANTIDAD_ACTUAL > H.CANTIDAD_ANTERIOR-H.CANTIDAD+0.0001
+            OR B.CANTIDAD_ACTUAL < H.CANTIDAD_ANTERIOR-H.CANTIDAD-0.0001))
+   OR (H.DESCRIPCION NOT STARTING WITH 'Venta'
+       AND (B.CANTIDAD_ACTUAL > H.CANTIDAD_ANTERIOR+H.CANTIDAD+0.0001
+            OR B.CANTIDAD_ACTUAL < H.CANTIDAD_ANTERIOR+H.CANTIDAD-0.0001));
+
+/* Caso comprobado: ticket 171944 suma 86.00 = sus cuatro TOTAL_ARTICULO. */
+SELECT T.ID, T.TOTAL, SUM(A.TOTAL_ARTICULO) AS SUMA_LINEAS,
+       SUM(A.CANTIDAD) AS UNIDADES
+FROM VENTATICKETS T JOIN VENTATICKETS_ARTICULOS A ON A.TICKET_ID=T.ID
+WHERE T.ID=171944 AND T.ESTA_ABIERTO='f' AND T.ESTA_CANCELADO='f'
+GROUP BY T.ID,T.TOTAL;
+
+/* Devolución por ticket, separada de las líneas de venta. */
+SELECT T.ID, T.TOTAL, SUM(D.TOTAL_DEVUELTO) AS DEVOLUCION_DOCUMENTADA
+FROM VENTATICKETS T JOIN DEVOLUCIONES D ON D.TICKET_ID=T.ID
+GROUP BY T.ID,T.TOTAL;
+
+SELECT COUNT(*) AS TICKETS_MONEDA_NULA
+FROM VENTATICKETS WHERE MONEDA IS NULL;
 ```
 
-Revisar filas con precios e importes plausibles contra recibos/exportación conocidos; no concluir pesos/centavos solo por magnitud de tipo. Consultar 8.2 para las dos tablas de historial y comparar función, fechas y saldo antes de elegir fuente.
+`DINVENTARIO` salió NULL en todas las filas consultadas. Balance e historial no deben sumarse: el segundo es movimiento, el primero saldo. El código de campo `INT64`, escala -4, junto con conciliación entre ticket y renglones, descarta aplicar conversión centavos por defecto; confirmar la divisa con evidencia del negocio porque `MONEDA` está vacía.
 
-## 9. E. Mapeo provisional Eleventa → Retail Intelligence
+## 9. E. Mapeo Eleventa → Retail Intelligence
 
-| Origen propuesto (no verificado) | Destino actual/candidato | Regla/validación |
+| Origen verificado | Destino actual/candidato | Regla/validación |
 |---|---|---|
-| `PRODUCTOS.CODIGO` | `Producto.Codigo` | Preservar como texto; probar unicidad exacta y normalizada; guardar clave origen. |
-| `PRODUCTOS.DESCRIPCION` | `Producto.Nombre` | Trim con registro del valor original; comprobar límite 250. |
-| `PCOSTO`, `PVENTA` | `CostoActual`, `PrecioVentaActual` | Conversión solo después de establecer unidad/escala; rechazar/desviar anomalías y no sobrescribir con nulos/cero dudoso. |
-| proveedor/departamento por ID | FKs actuales | Resolver IDs Eleventa ↔ IDs Retail en tabla de correspondencia; no fijar departamento a 1. |
-| cantidad de fuente autoritativa | `Inventario.Existencia` | Acordar almacén; snapshot por importación; no agregar campos duplicados. |
-| fecha real de alta | Nuevo nullable de fecha origen | Solo comprobada, con campo fuente/confianza. |
-| tickets y artículos válidos | `VentaPeriodo` solo como agregado si se conserva ese contrato; recomendado nuevo detalle transaccional | Clave origen idempotente, fecha efectiva, cancelación/devolución auditables; reconciliar sumas antes del agregado. |
-| eliminado/deshabilitado Eleventa | `Activo`/`Descontinuado` | Soft-delete/suspensión solo con semántica comprobada; no borrar producto con historial. |
+| `PRODUCTOS.ID` | Clave externa de producto a añadir al modelo | Usar como identidad origen; no depender únicamente del código ni de nombres. |
+| `PRODUCTOS.CODIGO` | `Producto.Codigo` | Conservar literal como string. 28,675 renglones no hacen match con catálogo vigente; mantener líneas huérfanas y resolver por alias o clave externa, nunca descartarlas. |
+| `PRODUCTOS.DESCRIPCION` | `Producto.Nombre` | Validar límite actual destino 250 contra origen 255; conservar bruto si hay recorte. |
+| `PCOSTO`, `PVENTA` | `CostoActual`, `PrecioVentaActual` | INT64 escala -4 a decimal; no dividir entre 100. Confirmar divisa; proteger dato destino válido contra nulos. |
+| `PRODUCTOS.DEPT` | `Producto.IdDepartamento` | Relación inferida; todos los valores actuales resuelven a departamento. Mapear ID origen y no asumir correspondencia por nombre solamente. |
+| `PRODUCTOS.PROVID` | `Producto.IdProveedor` | Datos muy incompletos: 3,939 sentinel `-1`; solo 16 productos enlazan a proveedor existente. No forzar proveedor ficticio ni sobrescribir con vacío. |
+| `PRODUCTOS.ELIMINADO_EN` | `Producto.Activo`/`Descontinuado` | Fecha de borrado lógico: registrar fecha/estado y conservar historial; validar que se reactive si vuelve a ser NULL. |
+| `INVENTARIO_BALANCES.PRODUCTO_ID/ALMACEN_ID/CANTIDAD_ACTUAL` | `Inventario` más clave de almacén a incorporar | Snapshot por producto/almacén; actual es fuente, `DINVENTARIO` nulo. Mantener valor bruto FLOAT y política de redondeo. |
+| `VENTATICKETS.ID`, `FOLIO`, estados, `VENDIDO_EN`, `TOTAL` | Nuevo encabezado de venta o staging origen | Clave idempotente `(source_instance, ticket_id)`; folio no probado único; filtrar abierto/cancelado. |
+| `VENTATICKETS_ARTICULOS.ID/TICKET_ID/PRODUCTO_CODIGO/CANTIDAD/PRECIO_FINAL/TOTAL_ARTICULO` | Nueva línea de venta; conservar agregado `VentaPeriodo` como proyección derivada si hace falta | `ID` línea de origen, vínculo ticket inferido, cantidad fraccionaria, totales registrados; importar código bruto aun sin producto resuelto. |
+| `DEVOLUCIONES.ID/TICKET_ID/TOTAL_DEVUELTO`; detalle de artículos | Nuevo evento de devolución | Importar separado. No atribuir unidades por producto sin `DEVOLUCIONES_ARTICULOS`; detalle actual cubre solo 1 de 269 devoluciones. |
+| Fecha alta catálogo | Nullable en `Producto`, con fuente y confianza | No poblar desde timestamps de inventario/venta; actualmente NULL porque no hay evidencia de creación universal. |
 
 ## 10. F. Diseño API de integración (propuesta condicionada)
 
@@ -405,21 +464,21 @@ No añadir endpoints de catálogo de proveedores/departamentos separados mientra
 
 `SyncBatchDto`: `sourceSystem`, `sourceInstanceId`, `syncId`, `schemaVersion`, `extractedAt`, `periodStart/End`, `cursor`, `items[]`, `checksum`, `isFullSnapshot`. DTO de producto incluye `sourceProductId`, `code`, `description`, precios brutos + unidad confirmada, `createdAtSource?`, `createdAtEvidence`, flags originales. DTO inventario contiene `sourceProductId`, `warehouseId`, `quantity`, `asOf`. DTO venta contiene `sourceTicketId`, `sourceLineId`, `soldAt`, `ticketStatus`, `quantity`, `returnedQuantity`, importes brutos/netos y unidad/escala.
 
-Flujo: extraer en transacción de lectura → validar/escribir staging → normalizar sin destruir valor bruto → reconciliar conteos y sumas → upsert por claves origen → actualizar snapshot atómicamente → guardar resultado y warnings. Reejecución del mismo lote/clave no duplica filas. Actualización solo de atributos cuya fuente nueva es válida; valores vacíos/cero inválido no borran atributos válidos. Soft delete solo por snapshot completo confirmado o flag explícito, nunca por lote parcial.
+Flujo: extraer en transacción de lectura → validar/escribir staging → normalizar sin destruir valor bruto → reconciliar conteos y sumas → upsert por claves origen → actualizar snapshot atómicamente → guardar resultado y warnings. Reejecución del mismo lote/clave no duplica filas. Actualización solo de atributos cuya fuente nueva es válida; valores vacíos/cero inválido no borran atributos válidos. Soft delete solo por snapshot completo confirmado o flag explícito, nunca por lote parcial. En ventas, importar devoluciones como eventos separados y conservar unidades/importe no asignables como devolución no distribuida; no generar neto por producto falso.
 
 Autenticación: HTTPS + credencial de servicio (API key almacenada fuera de código o OAuth client credentials según infraestructura), alcance limitado a integración; rotación, rate limit y tamaño máximo. Logs con `syncId`, conteos y códigos de error, sin cadenas de conexión ni datos sensibles. Separar extracción, transformación, validación y escritura; configuración por variables/secret store. La conexión Firebird debe usar cuenta de solo lectura; si la base no permite asignar privilegios, abrir archivo copia aislada y credencial restringida.
 
 ## 11. G. Plan de implementación por etapas
 
-1. Resolver cliente Firebird 2.0 compatible con Windows actual y abrir la restauración en lectura; exportar catálogo y resultados de consultas como artefactos revisables.
-2. Completar inventario de metadatos, muestras y reconciliaciones; cerrar fecha de alta, estados de ticket, devoluciones, moneda e inventario por almacén.
-3. Acordar claves de origen y DTO canónicos; definir correspondencias de proveedor/departamento y campos de procedencia/fecha de alta nullable.
+1. Cerrar con el negocio la divisa y el significado operativo del evento “Alta inicial de producto”; por ahora guardar fecha real de alta como desconocida.
+2. Acordar claves de origen y DTO canónicos; definir correspondencias de proveedor/departamento y campos de procedencia/fecha de alta nullable. Resolver política para los 718 códigos históricos no presentes en el catálogo.
+3. Confirmar impacto de 269 devoluciones (268 sin detalle de producto), la FK lógica de ticket y las 12 diferencias de inventario; conservar diferencias como errores/warnings visibles.
 4. Definir modelo transaccional de ventas y claves idempotentes; decidir conservar `VentaPeriodo` para reportes agregados y crear almacenamiento de líneas fuente para trazabilidad.
 5. Preparar extracción solo lectura de catálogo en staging sobre base restaurada; comparar conteos, duplicados y nulos. Aprobar criterios de aceptación antes de escritura.
 6. Implementar y validar sincronización de catálogo, incluyendo no sobrescritura y soft delete explícito.
 7. Implementar snapshot de inventario y conciliación por almacén/producto.
 8. Importar historial de tickets válidos con cancelaciones/devoluciones conciliadas y estrategia de solapamiento idempotente.
-9. Añadir estados de producto y fecha de alta al análisis preservando el algoritmo de 60 días como comportamiento base y mostrando diferencias/impacto antes de activarlo.
+9. Añadir estados de producto y fecha de alta al análisis preservando el algoritmo actual de 60 días como comportamiento base; si no hay alta confiable, clasificar como información insuficiente/nuevo solo con otra evidencia aprobada, nunca afirmar edad.
 10. Operar proceso programado con métricas, alertas de errores y recuperación; después conectar fuentes de Eleventa remotas según despliegue.
 
 ## 12. H. Pruebas de validación requeridas
@@ -440,8 +499,8 @@ Autenticación: HTTPS + credencial de servicio (API key almacenada fuera de cód
 | Historial ausente o con hueco | Información insuficiente; no asumir nunca vendido/no vendido. |
 | Fecha de alta desconocida | Se conserva nula y la depuración no la sustituye por primera venta/importación. |
 
-## 13. Información necesaria para cerrar la auditoría
+## 13. Conclusiones y límites aún abiertos
 
-Se necesita poder ejecutar consultas de solo lectura contra `C:\EleventaRestore\eleventa_test.fdb` con cliente Firebird 2.0 compatible. El obstáculo concreto observado es el error de Windows **Illegal System DLL Relocation** al iniciar `C:\Program Files (x86)\Firebird\Firebird_2_0\bin\isql.exe`; no es un rechazo de credenciales ni un error SQL. Tras corregir/evitar el cliente incompatible, ejecutar secciones 8.1–8.5 primero y guardar resultados. Luego, adaptar 8.6–8.9 solo a campos confirmados. Alternativamente, entregar exportación de metadatos y resultados de esas consultas sin credenciales.
+La auditoría del esquema y muestras principales se ejecutó sobre la copia restaurada con Firebird 2.0 ya instalado, sin usar Eleventa y sin modificar bases. Se completaron el inventario de relaciones, estructuras de tablas de integración, llaves relevantes, fecha de alta, tickets, devoluciones, importes e inventario actual.
 
-No se puede completar honestamente el inventario A, el diccionario comprobado B, los informes C/D, el mapeo final E, ni concluir las pruebas con datos reales hasta disponer de esos resultados.
+Quedan decisiones de negocio que la base por sí sola no puede resolver: divisa formal (los tickets tienen `MONEDA` nula), si “Alta inicial de producto” puede aceptarse como fecha de incorporación al catálogo para algún subconjunto (130 casos demuestran que no es universal), imputación por producto de 268 devoluciones sin detalle, mapeo de códigos históricos sin catálogo vigente y revisión de 12 diferencias entre el último movimiento de inventario y el balance actual. Esas limitaciones deben mantenerse explícitas en la importación y en la clasificación de depuración.
