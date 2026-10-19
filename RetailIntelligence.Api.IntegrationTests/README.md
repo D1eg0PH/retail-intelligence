@@ -17,4 +17,4 @@ dotnet run --project RetailIntelligence.Api.IntegrationTests.csproj
 docker stop retail-intelligence-pedido-tests
 ```
 
-The checks cover 14-, 28-, and 30-day periods, 28-day target coverage, the safety buffer, selection of the latest import, inventory deduction, supplier grouping and exclusion, and rejection of an invalid period before existing orders are cleared.
+The checks cover 14-, 28-, and 30-day periods normalized to one week, the configured safety buffer, the insufficient/sufficient/exact-inventory examples, products without sales, selection of the latest sales and inventory imports, supplier grouping and exclusion, rejection of missing or invalid sales periods before existing orders are cleared, and whole-period depuration windows with internal-gap detection.

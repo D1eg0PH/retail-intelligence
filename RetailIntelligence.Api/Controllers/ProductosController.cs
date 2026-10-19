@@ -22,4 +22,11 @@ public class ProductosController : ControllerBase
         return Ok(productos);
     }
 
+    [HttpGet("depuracion")]
+    public async Task<IActionResult> GetDepuracion()
+    {
+        var productos = await _productoService.GetDepuracionAsync();
+
+        return Ok(productos);
+    }
 }

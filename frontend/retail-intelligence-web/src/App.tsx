@@ -7,6 +7,7 @@ import PedidosPage from "./pages/PedidosPage";
 import PedidoDetallePage from "./pages/PedidoDetallePage";
 import BarcodePage from "./pages/BarcodePage";
 import ConfiguracionPage from "./pages/ConfiguracionPage";
+import DepuracionProductosPage from "./pages/DepuracionProductosPage";
 
 function App() {
     return (
@@ -37,6 +38,11 @@ function App() {
                     <Route
                         path="/configuracion"
                         element={<ConfiguracionPage />}
+                    />
+
+                    <Route
+                        path="/dashboard"
+                        element={<DepuracionProductosPage />}
                     />
 
                 </Route>

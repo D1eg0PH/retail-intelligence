@@ -1,4 +1,7 @@
 import { useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
     importInventory,
     importSales
@@ -7,7 +10,32 @@ import {
     generarPedidos
 } from "../services/pedidoService";
 
+function obtenerMensajeError(error: unknown, respaldo: string) {
+    if (axios.isAxiosError(error)) {
+        const data: unknown = error.response?.data;
+
+        if (typeof data === "string" && data.trim()) {
+            return data;
+        }
+
+        if (data && typeof data === "object") {
+            const response = data as Record<string, unknown>;
+            if (typeof response.mensaje === "string") {
+                return response.mensaje;
+            }
+            if (typeof response.title === "string") {
+                return response.title;
+            }
+        }
+    }
+
+    return error instanceof Error && error.message
+        ? error.message
+        : respaldo;
+}
+
 export default function ImportacionesPage() {
+    const navigate = useNavigate();
 
     const [inventoryFile, setInventoryFile] =
         useState<File | null>(null);
@@ -15,14 +43,11 @@ export default function ImportacionesPage() {
     const [salesFile, setSalesFile] =
         useState<File | null>(null);
 
-    const [fechaInicio, setFechaInicio] =
-        useState("");
 
-    const [fechaFin, setFechaFin] =
-        useState("");
-
-    const [diasPeriodo, setDiasPeriodo] = useState(30);
-
+    const [fechaInicio, setFechaInicio] = useState("");
+    const [fechaFin, setFechaFin] = useState("");
+    const [generandoPedidos, setGenerandoPedidos] = useState(false);
+    
     const handleImportInventory = async () => {
 
         if (!inventoryFile) {
@@ -40,89 +65,77 @@ export default function ImportacionesPage() {
 
             setInventoryFile(null);
         }
-        catch (error: any) {
-
+        catch (error: unknown) {
             console.error(error);
-
-            if (error.response) {
-                alert(
-                    `Error ${error.response.status}: ${
-                        JSON.stringify(
-                            error.response.data
-                        )
-                    }`
-                );
-            }
-            else {
-                alert(error.message);
-            }
+            alert(obtenerMensajeError(
+                error,
+                "No se pudo importar el inventario."
+            ));
         }
     };
 
     const handleImportSales = async () => {
-
         if (!salesFile) {
-            alert(
-                "Selecciona un archivo de ventas."
-            );
+            alert("Selecciona un archivo de ventas.");
             return;
         }
 
+        if (!fechaInicio || !fechaFin) {
+            alert("Selecciona la fecha de inicio y la fecha de fin.");
+            return;
+        }
+
+        if (fechaInicio > fechaFin) {
+            alert("La fecha de inicio no puede ser posterior a la fecha de fin.");
+            return;
+        }
 
         try {
-
-           await importSales(
+            await importSales(
                 salesFile,
-                diasPeriodo
+                undefined,
+                fechaInicio,
+                fechaFin
             );
 
-            alert(
-                "Ventas importadas correctamente."
-            );
+            alert("Ventas importadas correctamente.");
 
             setSalesFile(null);
-        }
-        catch (error: any) {
-
+        } catch (error: unknown) {
             console.error(error);
-
-            if (error.response) {
-                alert(
-                    JSON.stringify(
-                        error.response.data
-                    )
-                );
-            }
-            else {
-                alert(error.message);
-            }
+            alert(obtenerMensajeError(
+                error,
+                "No se pudieron importar las ventas."
+            ));
         }
     };
 
+
+
     const handleGenerarPedidos = async () => {
+        const confirmado = window.confirm(
+            "Generar pedidos reemplazará todos los pedidos existentes. ¿Deseas continuar?"
+        );
 
-        try {
-
-            await generarPedidos();
-
-            alert(
-                "Pedidos generados correctamente."
-            );
+        if (!confirmado) {
+            return;
         }
-        catch (error: any) {
 
+        setGenerandoPedidos(true);
+        try {
+            await generarPedidos();
+            toast.success("Pedidos generados correctamente.");
+            navigate("/pedidos");
+        }
+        catch (error: unknown) {
             console.error(error);
-
-            if (error.response) {
-                alert(
-                    JSON.stringify(
-                        error.response.data
-                    )
-                );
-            }
-            else {
-                alert(error.message);
-            }
+            toast.error(obtenerMensajeError(
+                error,
+                "No se pudieron generar los pedidos."
+            ));
+        }
+        finally {
+            setGenerandoPedidos(false);
         }
     };
 
@@ -271,25 +284,43 @@ export default function ImportacionesPage() {
                     )
                 }
 
-                <p className="text-sm text-gray-500 mb-2">
-                    Días del periodo de ventas
-                </p>
+ 
+                <div className="mb-4">
+                    <label
+                        htmlFor="fechaInicio"
+                        className="block text-sm text-gray-500 mb-2"
+                    >
+                        Fecha de inicio
+                    </label>
 
-                <input
-                    type="number"
-                    min={1}
-                    value={diasPeriodo}
-                    onChange={(e) =>
-                        setDiasPeriodo(Number(e.target.value))
-                    }
-                    className="
-                        border
-                        p-3
-                        rounded-lg
-                        mb-6
-                        w-full
-                    "
-                />
+                    <input
+                        id="fechaInicio"
+                        type="date"
+                        value={fechaInicio}
+                        onChange={(e) => setFechaInicio(e.target.value)}
+                        className="border p-3 rounded-lg w-full"
+                    />
+                </div>
+
+                <div className="mb-6">
+                    <label
+                        htmlFor="fechaFin"
+                        className="block text-sm text-gray-500 mb-2"
+                    >
+                        Fecha de fin
+                    </label>
+
+                    <input
+                        id="fechaFin"
+                        type="date"
+                        value={fechaFin}
+                        onChange={(e) => setFechaFin(e.target.value)}
+                        min={fechaInicio || undefined}
+                        className="border p-3 rounded-lg w-full"
+                    />
+                </div>
+
+
 
                 <button
                     onClick={handleImportSales}
@@ -343,6 +374,8 @@ export default function ImportacionesPage() {
                     onClick={
                         handleGenerarPedidos
                     }
+                    disabled={generandoPedidos}
+                    aria-busy={generandoPedidos}
                     className="
                         w-full
                         bg-purple-600
@@ -353,9 +386,11 @@ export default function ImportacionesPage() {
                         font-semibold
                         text-lg
                         transition
+                        disabled:cursor-not-allowed
+                        disabled:opacity-60
                     "
                 >
-                    Generar Pedidos
+                    {generandoPedidos ? "Generando pedidos..." : "Generar Pedidos"}
                 </button>
 
             </div>

@@ -47,16 +47,34 @@ public class PedidoService : IPedidoService
             importacionVentas.FechaFinPeriodo == default ||
             diasPeriodo <= 0)
         {
-            throw new Exception("El período de la importación de ventas es inválido.");
+            throw new InvalidOperationException(
+                "El período de la importación de ventas es inválido.");
         }
 
-        await LimpiarPedidos();
+        var configuracion = await ObtenerConfiguracionAsync();
 
-        await CrearPedidos(
-            ventasPorProducto,
-            inventarioActual,
-            importacionVentas,
-            diasPeriodo);
+        await using var transaccion =
+            await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            await LimpiarPedidos();
+
+            await CrearPedidos(
+                ventasPorProducto,
+                inventarioActual,
+                importacionVentas,
+                diasPeriodo,
+                configuracion.PorcentajeColchon);
+
+            await transaccion.CommitAsync();
+        }
+        catch
+        {
+            await transaccion.RollbackAsync();
+            _context.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     private async Task<Importacion> ObtenerUltimaImportacionInventario()
@@ -68,7 +86,7 @@ public class PedidoService : IPedidoService
 
         if (importacion == null)
         {
-            throw new Exception(
+            throw new InvalidOperationException(
                 "No existe ninguna importación de inventario.");
         }
 
@@ -104,11 +122,42 @@ public class PedidoService : IPedidoService
 
         if (importacion == null)
         {
-            throw new Exception(
+            throw new InvalidOperationException(
                 "No existe ninguna importación de ventas.");
         }
 
+        var diasPeriodo = importacion.FechaFinPeriodo.DayNumber -
+            importacion.FechaInicioPeriodo.DayNumber + 1;
+
+        if (importacion.FechaInicioPeriodo == default ||
+            importacion.FechaFinPeriodo == default ||
+            diasPeriodo <= 0)
+        {
+            throw new InvalidOperationException(
+                "El período de la última importación de ventas es inválido.");
+        }
+
         return importacion;
+    }
+
+    private async Task<ConfiguracionSistema> ObtenerConfiguracionAsync()
+    {
+        var configuracion = await _context.ConfiguracionSistema
+            .SingleOrDefaultAsync();
+
+        if (configuracion == null)
+        {
+            throw new InvalidOperationException(
+                "No existe una configuración del sistema para generar pedidos.");
+        }
+
+        if (configuracion.PorcentajeColchon < 0m)
+        {
+            throw new InvalidOperationException(
+                "El porcentaje de colchón configurado no puede ser negativo.");
+        }
+
+        return configuracion;
     }
 
 
@@ -127,17 +176,18 @@ public class PedidoService : IPedidoService
         List<VentaProductoDto> ventasPorProducto,
         Dictionary<int, decimal> inventarioActual,
         Importacion importacionVentas,
-        int diasPeriodo)
+        int diasPeriodo,
+        decimal porcentajeColchon)
     {
-        var configuracion = await _context.ConfiguracionSistema.SingleAsync();
-        var factorColchon = 1m + configuracion.PorcentajeColchon / 100m;
-        const int diasCoberturaObjetivo = 28;
+        var semanasPeriodo = diasPeriodo / 7m;
+        var factorColchon = 1m + porcentajeColchon / 100m;
 
-        Console.WriteLine($"Colchón configurado: {configuracion.PorcentajeColchon}%");
+        Console.WriteLine($"Colchón configurado: {porcentajeColchon}%");
         Console.WriteLine($"Importación utilizada: {importacionVentas.IdImportacion}");
         Console.WriteLine(
             $"Período analizado: {importacionVentas.FechaInicioPeriodo} al " +
-            $"{importacionVentas.FechaFinPeriodo} ({diasPeriodo} días)");
+            $"{importacionVentas.FechaFinPeriodo} ({diasPeriodo} días, " +
+            $"{semanasPeriodo} semanas)");
 
         var pedidosPorProveedor = new Dictionary<int, Pedido>();
         var productos = await _context.Productos
@@ -153,15 +203,14 @@ public class PedidoService : IPedidoService
                 continue;
             }
 
-            var promedioDiario = venta.CantidadVendida / diasPeriodo;
-            var stockObjetivo =
-                promedioDiario * diasCoberturaObjetivo * factorColchon;
+            var promedioSemanal = venta.CantidadVendida / semanasPeriodo;
+            var demandaObjetivo = promedioSemanal * factorColchon;
             var existenciaActual = inventarioActual.GetValueOrDefault(
                 venta.IdProducto,
                 0m);
             var pedidoSugerido = Math.Max(
                 0m,
-                Math.Ceiling(stockObjetivo - existenciaActual));
+                Math.Ceiling(demandaObjetivo - existenciaActual));
 
             if (pedidoSugerido <= 0m)
             {
