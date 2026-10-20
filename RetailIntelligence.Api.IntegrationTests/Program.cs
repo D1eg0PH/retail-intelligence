@@ -3,11 +3,17 @@ using Npgsql;
 using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Api.Services;
+using RetailIntelligence.Api.Integrations.Eleventa;
 
 internal static class Program
 {
-    private static async Task Main()
+    private static async Task Main(string[] args)
     {
+        if (args.Contains("--unit", StringComparer.OrdinalIgnoreCase))
+        {
+            await EleventaSyncContractTests.RunAsync();
+            return;
+        }
         var connectionString = Environment.GetEnvironmentVariable(
             "RETAIL_INTELLIGENCE_TEST_DB");
         var testConnection = string.IsNullOrWhiteSpace(connectionString)

@@ -1,3 +1,6 @@
 <Solution>
+  <Project Path="Eleventa.Contracts/Eleventa.Contracts.csproj" />
   <Project Path="RetailIntelligence.Api/RetailIntelligence.Api.csproj" />
+  <Project Path="Eleventa.Agent/Eleventa.Agent.csproj" />
+  <Project Path="RetailIntelligence.Api.IntegrationTests/RetailIntelligence.Api.IntegrationTests.csproj" />
 </Solution>

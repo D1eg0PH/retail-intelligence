@@ -22,6 +22,7 @@ CREATE TABLE ConfiguracionSistema (
     semanas_promedio SMALLINT NOT NULL DEFAULT 4,
     dias_inventario_objetivo SMALLINT NOT NULL DEFAULT 14,
     dias_producto_muerto SMALLINT NOT NULL DEFAULT 60,
+    porcentaje_colchon NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (porcentaje_colchon >= 0),
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -226,8 +227,6 @@ CREATE TABLE Pedidos (
 
     fecha_pedido DATE NOT NULL,
     fecha_entrega DATE,
-
-    observaciones TEXT,
 
     observaciones TEXT,
 

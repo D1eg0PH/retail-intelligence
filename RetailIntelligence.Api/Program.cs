@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
 using RetailIntelligence.Api.Interfaces;
 using RetailIntelligence.Api.Services;
+using RetailIntelligence.Api.Integrations.Eleventa;
+using Npgsql;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,8 +16,14 @@ builder.Services.AddControllers()
             ReferenceHandler.IgnoreCycles;
     });
 
-// Configuración de PostgreSQL
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+// La contraseña puede inyectarse fuera del repositorio. Una cadena completa de
+// ConnectionStrings__DefaultConnection también puede reemplazar el valor base.
+var postgresConnection = new NpgsqlConnectionStringBuilder(
+    builder.Configuration.GetConnectionString("DefaultConnection"));
+var postgresPassword = builder.Configuration["Postgres:Password"];
+if (!string.IsNullOrWhiteSpace(postgresPassword))
+    postgresConnection.Password = postgresPassword;
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(postgresConnection.ConnectionString));
 
 builder.Services.AddSwaggerGen();
 
@@ -44,6 +52,8 @@ builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
+builder.Services.AddScoped<EleventaApiKeyFilter>();
+builder.Services.AddScoped<EleventaSyncService>();
 
 var app = builder.Build();
 
@@ -62,6 +72,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 
 app.Run();
