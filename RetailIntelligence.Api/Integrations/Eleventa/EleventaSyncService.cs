@@ -86,13 +86,17 @@ public sealed class EleventaSyncService(AppDbContext db)
         switch (request.Kind)
         {
             case "catalog":
+                var productIds = request.Products.Select(p => p.SourceProductId).ToArray();
+                var existingProducts = await db.EleventaProducts
+                    .Where(p => p.SourceId == request.SourceId && productIds.Contains(p.SourceProductId))
+                    .ToDictionaryAsync(p => p.SourceProductId, ct);
                 foreach (var item in request.Products)
                 {
-                    var entity = await db.EleventaProducts.FindAsync([request.SourceId, item.SourceProductId], ct);
-                    if (entity is null)
+                    if (!existingProducts.TryGetValue(item.SourceProductId, out var entity))
                     {
                         entity = new EleventaProduct { SourceId = request.SourceId, SourceProductId = item.SourceProductId };
                         db.EleventaProducts.Add(entity);
+                        existingProducts.Add(item.SourceProductId, entity);
                     }
                     entity.CodeOriginal = item.Code;
                     entity.DescriptionOriginal = item.Description;
@@ -147,17 +151,23 @@ public sealed class EleventaSyncService(AppDbContext db)
             throw new EleventaBatchConflictException("Los fragmentos del snapshot no coinciden en fecha o cantidad esperada.");
         }
 
+        var productIds = chunk.Rows.Select(row => row.SourceProductId).Distinct().ToArray();
+        var warehouseIds = chunk.Rows.Select(row => row.SourceWarehouseId).Distinct().ToArray();
+        var existingRows = await db.EleventaInventoryRows
+            .Where(row => row.SourceId == request.SourceId && row.SnapshotId == chunk.SnapshotId &&
+                          productIds.Contains(row.SourceProductId) && warehouseIds.Contains(row.SourceWarehouseId))
+            .ToDictionaryAsync(row => (row.SourceProductId, row.SourceWarehouseId), ct);
         foreach (var row in chunk.Rows)
         {
-            var entity = await db.EleventaInventoryRows.FindAsync(
-                [request.SourceId, chunk.SnapshotId, row.SourceProductId, row.SourceWarehouseId], ct);
-            if (entity is null)
+            if (!existingRows.TryGetValue((row.SourceProductId, row.SourceWarehouseId), out var entity))
             {
-                db.EleventaInventoryRows.Add(new EleventaInventoryRow
+                entity = new EleventaInventoryRow
                 {
                     SourceId = request.SourceId, SnapshotId = chunk.SnapshotId,
                     SourceProductId = row.SourceProductId, SourceWarehouseId = row.SourceWarehouseId, Quantity = row.Quantity
-                });
+                };
+                db.EleventaInventoryRows.Add(entity);
+                existingRows.Add((row.SourceProductId, row.SourceWarehouseId), entity);
             }
             else if (entity.Quantity != row.Quantity)
             {
@@ -180,13 +190,17 @@ public sealed class EleventaSyncService(AppDbContext db)
 
     private async Task PersistSalesAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
     {
+        var ticketIds = request.Sales.Select(sale => sale.SourceTicketId).ToArray();
+        var existingSales = await db.EleventaSales
+            .Where(sale => sale.SourceId == request.SourceId && ticketIds.Contains(sale.SourceTicketId))
+            .ToDictionaryAsync(sale => sale.SourceTicketId, ct);
         foreach (var sale in request.Sales)
         {
-            var entity = await db.EleventaSales.FindAsync([request.SourceId, sale.SourceTicketId], ct);
-            if (entity is null)
+            if (!existingSales.TryGetValue(sale.SourceTicketId, out var entity))
             {
                 entity = new EleventaSale { SourceId = request.SourceId, SourceTicketId = sale.SourceTicketId };
                 db.EleventaSales.Add(entity);
+                existingSales.Add(sale.SourceTicketId, entity);
             }
             entity.Folio = sale.Folio; entity.CreatedAtOrigin = sale.CreatedAtOrigin; entity.SoldAt = sale.SoldAt;
             entity.PaidAt = sale.PaidAt; entity.Total = sale.Total; entity.Profit = sale.Profit;
@@ -194,17 +208,20 @@ public sealed class EleventaSyncService(AppDbContext db)
             entity.ObservedAt = observedAt;
         }
         await db.SaveChangesAsync(ct);
-        var ticketIds = request.Sales.Select(s => s.SourceTicketId).ToArray();
         var priorLines = await db.EleventaSaleLines.Where(l => l.SourceId == request.SourceId && ticketIds.Contains(l.SourceTicketId)).ToListAsync(ct);
         foreach (var line in priorLines) line.PresentInLatestSource = false;
+        var lineIds = request.Sales.SelectMany(sale => sale.Lines).Select(line => line.SourceLineId).Distinct().ToArray();
+        var existingLines = await db.EleventaSaleLines
+            .Where(line => line.SourceId == request.SourceId && lineIds.Contains(line.SourceLineId))
+            .ToDictionaryAsync(line => line.SourceLineId, ct);
         foreach (var sale in request.Sales)
         foreach (var line in sale.Lines)
         {
-            var entity = await db.EleventaSaleLines.FindAsync([request.SourceId, line.SourceLineId], ct);
-            if (entity is null)
+            if (!existingLines.TryGetValue(line.SourceLineId, out var entity))
             {
                 entity = new EleventaSaleLine { SourceId = request.SourceId, SourceLineId = line.SourceLineId };
                 db.EleventaSaleLines.Add(entity);
+                existingLines.Add(line.SourceLineId, entity);
             }
             entity.SourceTicketId = sale.SourceTicketId; entity.SourceProductId = line.SourceProductId;
             entity.ProductCodeOriginal = line.ProductCode; entity.ProductNameOriginal = line.ProductName;
@@ -216,27 +233,35 @@ public sealed class EleventaSyncService(AppDbContext db)
 
     private async Task PersistReturnsAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
     {
+        var returnIds = request.Returns.Select(item => item.SourceReturnId).ToArray();
+        var existingReturns = await db.EleventaReturns
+            .Where(item => item.SourceId == request.SourceId && returnIds.Contains(item.SourceReturnId))
+            .ToDictionaryAsync(item => item.SourceReturnId, ct);
         foreach (var item in request.Returns)
         {
-            var entity = await db.EleventaReturns.FindAsync([request.SourceId, item.SourceReturnId], ct);
-            if (entity is null)
+            if (!existingReturns.TryGetValue(item.SourceReturnId, out var entity))
             {
                 entity = new EleventaReturn { SourceId = request.SourceId, SourceReturnId = item.SourceReturnId };
                 db.EleventaReturns.Add(entity);
+                existingReturns.Add(item.SourceReturnId, entity);
             }
             entity.SourceTicketId = item.SourceTicketId; entity.ReturnedAt = item.ReturnedAt; entity.PaidAt = item.PaidAt;
             entity.ReturnType = item.ReturnType; entity.Cashier = item.Cashier; entity.RegisterName = item.RegisterName;
             entity.Amount = item.Amount; entity.DetailCount = item.Lines.Count; entity.DetailComplete = item.Lines.Count > 0; entity.ObservedAt = observedAt;
         }
         await db.SaveChangesAsync(ct);
+        var lineIds = request.Returns.SelectMany(item => item.Lines).Select(line => line.SourceReturnLineId).Distinct().ToArray();
+        var existingLines = await db.EleventaReturnLines
+            .Where(line => line.SourceId == request.SourceId && lineIds.Contains(line.SourceReturnLineId))
+            .ToDictionaryAsync(line => line.SourceReturnLineId, ct);
         foreach (var item in request.Returns)
         foreach (var line in item.Lines)
         {
-            var entity = await db.EleventaReturnLines.FindAsync([request.SourceId, line.SourceReturnLineId], ct);
-            if (entity is null)
+            if (!existingLines.TryGetValue(line.SourceReturnLineId, out var entity))
             {
                 entity = new EleventaReturnLine { SourceId = request.SourceId, SourceReturnLineId = line.SourceReturnLineId };
                 db.EleventaReturnLines.Add(entity);
+                existingLines.Add(line.SourceReturnLineId, entity);
             }
             entity.SourceReturnId = item.SourceReturnId; entity.SourceTicketId = item.SourceTicketId;
             entity.ProductCodeOriginal = line.ProductCode; entity.ProductDescriptionOriginal = line.ProductDescription;
