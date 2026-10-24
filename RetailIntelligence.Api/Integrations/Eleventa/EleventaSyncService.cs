@@ -146,7 +146,7 @@ public sealed class EleventaSyncService(AppDbContext db)
             db.EleventaInventorySnapshots.Add(snapshot);
         }
         else if (snapshot.ExpectedRecordCount != chunk.ExpectedRecordCount ||
-                 snapshot.ExtractedAt != chunk.ExtractedAtUtc.UtcDateTime)
+                 !TimestampsMatchAtDatabasePrecision(snapshot.ExtractedAt, chunk.ExtractedAtUtc.UtcDateTime))
         {
             throw new EleventaBatchConflictException("Los fragmentos del snapshot no coinciden en fecha o cantidad esperada.");
         }
@@ -309,6 +309,9 @@ public sealed class EleventaSyncService(AppDbContext db)
 
     private static int CountRecords(EleventaBatchRequest r) => r.Products.Count + (r.Inventory?.Rows.Count ?? 0) +
         r.Sales.Count + r.Sales.Sum(s => s.Lines.Count) + r.Returns.Count + r.Returns.Sum(x => x.Lines.Count);
+
+    private static bool TimestampsMatchAtDatabasePrecision(DateTime stored, DateTime incoming) =>
+        Math.Abs(stored.Ticks - incoming.Ticks) <= TimeSpan.TicksPerMillisecond / 100;
 
     private static bool FixedHashEquals(string stored, string incoming) =>
         CryptographicOperations.FixedTimeEquals(Convert.FromHexString(stored.Trim()), Convert.FromHexString(incoming));
