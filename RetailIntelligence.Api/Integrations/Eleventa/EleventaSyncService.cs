@@ -81,6 +81,84 @@ public sealed class EleventaSyncService(AppDbContext db)
         return new(skip, take, total, products);
     }
 
+    public async Task<EleventaDashboardResponse> GetDashboardAsync(
+        Guid sourceId, int skip, int take, string? search, CancellationToken ct)
+    {
+        var snapshot = await db.EleventaInventorySnapshots.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.IsComplete)
+            .OrderByDescending(s => s.ExtractedAt)
+            .Select(s => new { s.SnapshotId, s.ExtractedAt })
+            .FirstOrDefaultAsync(ct);
+
+        var salesSince = DateTime.UtcNow.AddDays(-30);
+        var salesLast30Days = await db.EleventaSales.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.SoldAt >= salesSince && !s.IsOpen && !s.IsCancelled)
+            .Select(s => s.Total)
+            .ToListAsync(ct);
+        var salesCount = salesLast30Days.Count;
+        var salesValue = salesLast30Days.Sum(total => total ?? 0m);
+
+        if (snapshot is null)
+            return new(null, 0, 0m, 0m, salesCount, salesValue, skip, take, 0, []);
+
+        var inventoryRows = await (from row in db.EleventaInventoryRows.AsNoTracking()
+                                   where row.SourceId == sourceId && row.SnapshotId == snapshot.SnapshotId
+                                   join product in db.EleventaProducts.AsNoTracking().Where(p => p.SourceId == sourceId)
+                                       on row.SourceProductId equals product.SourceProductId
+                                   select new
+                                   {
+                                       row.SourceProductId, row.Quantity, product.Cost, product.SalePrice,
+                                       product.CodeOriginal, product.DescriptionOriginal
+                                   }).ToListAsync(ct);
+        var inventory = inventoryRows.GroupBy(row => row.SourceProductId)
+            .Select(group => new
+            {
+                SourceProductId = group.Key,
+                Quantity = group.Sum(row => row.Quantity),
+                Cost = group.First().Cost,
+                SalePrice = group.First().SalePrice,
+                Code = group.First().CodeOriginal,
+                Description = group.First().DescriptionOriginal
+            }).ToList();
+        var productCount = inventory.Count;
+        var totalUnits = inventory.Sum(product => product.Quantity);
+        var inventoryCost = inventory.Sum(product => product.Quantity * (product.Cost ?? 0m));
+
+        var normalizedSearch = search?.Trim();
+        var filtered = inventory.AsEnumerable();
+        if (!string.IsNullOrEmpty(normalizedSearch))
+            filtered = filtered.Where(p => p.Code.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ||
+                p.Description.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase));
+        var filteredProducts = filtered.ToList();
+        var totalProducts = filteredProducts.Count;
+
+        var soldTickets = await db.EleventaSales.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && !s.IsCancelled && !s.IsOpen && s.SoldAt != null)
+            .Select(s => new { s.SourceTicketId, s.SoldAt })
+            .ToListAsync(ct);
+        var soldTicketDates = soldTickets.ToDictionary(s => s.SourceTicketId, s => s.SoldAt);
+        var ticketIds = soldTicketDates.Keys.ToArray();
+        var lastSalesByProduct = ticketIds.Length == 0
+            ? new Dictionary<int, DateTime?>()
+            : (await db.EleventaSaleLines.AsNoTracking()
+                    .Where(line => line.SourceId == sourceId && line.SourceProductId != null && ticketIds.Contains(line.SourceTicketId))
+                    .Select(line => new { ProductId = line.SourceProductId!.Value, line.SourceTicketId })
+                    .ToListAsync(ct))
+                .Where(line => soldTicketDates.ContainsKey(line.SourceTicketId))
+                .GroupBy(line => line.ProductId)
+                .ToDictionary(group => group.Key, group => group.Max(line => soldTicketDates[line.SourceTicketId]));
+
+        var products = filteredProducts
+            .OrderByDescending(p => p.Quantity).ThenBy(p => p.Description)
+            .Skip(skip).Take(take)
+            .Select(p => new EleventaDashboardProductDto(p.SourceProductId, p.Code, p.Description, p.Quantity,
+                p.Cost, p.SalePrice, lastSalesByProduct.GetValueOrDefault(p.SourceProductId)))
+            .ToList();
+
+        return new(new DateTimeOffset(DateTime.SpecifyKind(snapshot.ExtractedAt, DateTimeKind.Utc)),
+            productCount, totalUnits, inventoryCost, salesCount, salesValue, skip, take, totalProducts, products);
+    }
+
     private async Task PersistAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
     {
         switch (request.Kind)

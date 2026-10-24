@@ -8,6 +8,7 @@ import PedidoDetallePage from "./pages/PedidoDetallePage";
 import BarcodePage from "./pages/BarcodePage";
 import ConfiguracionPage from "./pages/ConfiguracionPage";
 import DepuracionProductosPage from "./pages/DepuracionProductosPage";
+import EleventaDashboardPage from "./pages/EleventaDashboardPage";
 
 function App() {
     return (
@@ -43,6 +44,11 @@ function App() {
                     <Route
                         path="/dashboard"
                         element={<DepuracionProductosPage />}
+                    />
+
+                    <Route
+                        path="/dashboard/eleventa"
+                        element={<EleventaDashboardPage />}
                     />
 
                 </Route>

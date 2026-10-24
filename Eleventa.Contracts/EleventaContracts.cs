@@ -129,3 +129,12 @@ public sealed record EleventaProductViewDto(
     DateTime? FirstSaleAt, DateTime? FirstInventoryMovementAt, DateTime ObservedAt);
 
 public sealed record EleventaProductPageResponse(int Skip, int Take, int Total, IReadOnlyList<EleventaProductViewDto> Products);
+
+public sealed record EleventaDashboardProductDto(
+    int SourceProductId, string Code, string Description, decimal Quantity,
+    decimal? Cost, decimal? SalePrice, DateTime? LastSoldAt);
+
+public sealed record EleventaDashboardResponse(
+    DateTimeOffset? InventoryAtUtc, int ProductCount, decimal TotalUnits,
+    decimal InventoryCostValue, int SalesLast30Days, decimal SalesValueLast30Days,
+    int Skip, int Take, int TotalProducts, IReadOnlyList<EleventaDashboardProductDto> Products);
