@@ -90,7 +90,8 @@ public sealed class EleventaSyncService(AppDbContext db)
             .Select(s => new { s.SnapshotId, s.ExtractedAt })
             .FirstOrDefaultAsync(ct);
 
-        var salesSince = DateTime.UtcNow.AddDays(-30);
+        var eleventaTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City");
+        var salesSince = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow.AddDays(-30), eleventaTimeZone).DateTime;
         var salesLast30Days = await db.EleventaSales.AsNoTracking()
             .Where(s => s.SourceId == sourceId && s.SoldAt >= salesSince && !s.IsOpen && !s.IsCancelled)
             .Select(s => s.Total)

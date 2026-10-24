@@ -45,10 +45,13 @@ export default function EleventaDashboardPage() {
             });
             setData(response.data);
         } catch (err: unknown) {
-            const status = (err as { response?: { status?: number } }).response?.status;
+            const requestError = err as { response?: { status?: number }; message?: string };
+            const status = requestError.response?.status;
             setError(status === 401
                 ? "El token no es válido o ya fue rotado. Pega el token actual del agente Eleventa."
-                : "No se pudo cargar el dashboard. Revisa que la API esté disponible e inténtalo de nuevo.");
+                : status
+                    ? `La API respondió con error HTTP ${status}. Intenta de nuevo más tarde.`
+                    : `No se recibió respuesta de la API (${requestError.message ?? "error de red o CORS"}).`);
         } finally {
             setLoading(false);
         }
