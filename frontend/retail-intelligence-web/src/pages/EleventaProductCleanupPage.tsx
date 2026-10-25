@@ -3,7 +3,7 @@ import { AlertTriangle, Boxes, Clock3, PackageSearch, RefreshCw, Search } from "
 import { api } from "../api/axios";
 
 type CleanupProduct = {
-    sourceProductId: number; code: string; description: string; quantity: number | null;
+    sourceProductId: number; code: string; description: string; departmentId: number | null; departmentName: string | null; quantity: number | null;
     cost: number | null; salePrice: number | null; lastSoldAt: string | null;
     daysSinceSale: number | null; classification: string; inventoryCostValue: number | null; isDeleted: boolean;
 };
@@ -12,7 +12,7 @@ type CleanupData = {
     totalProducts: number; candidateCount: number; candidateInventoryCostValue: number;
     recentMovementCount: number; noSalesObservedCount: number; noInventoryCount: number;
     deletedCount: number; missingInventoryCount: number; skip: number; take: number;
-    filteredCount: number; products: CleanupProduct[];
+    filteredCount: number; departments: { departmentId: number; name: string }[]; products: CleanupProduct[];
 };
 type CleanupFilter = "all" | "candidate" | "recent-movement" | "no-sales-observed" | "no-inventory" | "deleted" | "missing-inventory";
 
@@ -36,6 +36,7 @@ export default function EleventaProductCleanupPage() {
     const [search, setSearch] = useState("");
     const [inactiveDays, setInactiveDays] = useState(60);
     const [classification, setClassification] = useState<CleanupFilter>("all");
+    const [departmentId, setDepartmentId] = useState("all");
     const [skip, setSkip] = useState(0);
     const [data, setData] = useState<CleanupData | null>(null);
     const [loading, setLoading] = useState(false);
@@ -46,7 +47,8 @@ export default function EleventaProductCleanupPage() {
         try {
             const response = await api.get<CleanupData>("/integrations/eleventa/v1/products/cleanup", {
                 headers: { Authorization: `Bearer ${apiToken}` },
-                params: { skip, take: pageSize, inactiveDays, search: search || undefined, classification }
+                params: { skip, take: pageSize, inactiveDays, search: search || undefined, classification,
+                    departmentId: departmentId === "all" ? undefined : Number(departmentId) }
             });
             setData(response.data);
         } catch (err: unknown) {
@@ -56,7 +58,7 @@ export default function EleventaProductCleanupPage() {
                 : status ? `La API respondió con error HTTP ${status}. Intenta de nuevo más tarde.`
                     : `No se recibió respuesta de la API (${requestError.message ?? "error de red o CORS"}).`);
         } finally { setLoading(false); }
-    }, [classification, inactiveDays, search, skip]);
+    }, [classification, departmentId, inactiveDays, search, skip]);
 
     useEffect(() => { if (token) void load(token); }, [token, load]);
 
@@ -139,12 +141,17 @@ export default function EleventaProductCleanupPage() {
                             <option value="no-inventory">Sin existencia</option><option value="deleted">Eliminados en Eleventa</option>
                             <option value="missing-inventory">Sin dato de existencia</option>
                         </select>
+                        <select value={departmentId} onChange={event => { setDepartmentId(event.target.value); setSkip(0); }}
+                            aria-label="Filtrar por departamento" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+                            <option value="all">Todos los departamentos</option>
+                            {data.departments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
+                        </select>
                     </div>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[950px] text-left text-sm">
+                    <table className="w-full min-w-[1100px] text-left text-sm">
                         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>
-                            <th className="px-5 py-3">Código</th><th className="px-5 py-3">Producto</th>
+                            <th className="px-5 py-3">Código</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Departamento</th>
                             <th className="px-5 py-3 text-right">Existencia</th><th className="px-5 py-3 text-right">Costo</th>
                             <th className="px-5 py-3 text-right">Valor existencia</th><th className="px-5 py-3">Última venta</th>
                             <th className="px-5 py-3">Clasificación</th>
@@ -155,6 +162,7 @@ export default function EleventaProductCleanupPage() {
                                 return <tr key={product.sourceProductId} className="hover:bg-slate-50">
                                     <td className="px-5 py-3 font-mono text-slate-600">{product.code || "—"}</td>
                                     <td className="px-5 py-3 font-medium text-slate-900">{product.description || "Sin descripción"}</td>
+                                    <td className="px-5 py-3 text-slate-600">{product.departmentName || (product.departmentId == null ? "Sin departamento" : `Departamento ${product.departmentId}`)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.quantity == null ? "—" : number.format(product.quantity)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.cost == null ? "—" : money.format(product.cost)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.inventoryCostValue == null ? "—" : money.format(product.inventoryCostValue)}</td>
@@ -162,7 +170,7 @@ export default function EleventaProductCleanupPage() {
                                     <td className="px-5 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badge.classes}`}>{badge.label}</span></td>
                                 </tr>;
                             })}
-                            {data.products.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay productos para estos filtros."}</td></tr>}
+                            {data.products.length === 0 && <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay productos para estos filtros."}</td></tr>}
                         </tbody>
                     </table>
                 </div>
