@@ -4,7 +4,8 @@ import {
     ShoppingCart,
     Barcode,
     Settings,
-    Store
+    Store,
+    PackageSearch
 } from "lucide-react";
 
 import { NavLink } from "react-router-dom";
@@ -34,6 +35,11 @@ const menu = [
         name: "Dashboard Eleventa",
         path: "/dashboard/eleventa",
         icon: Store
+    },
+    {
+        name: "Depurador Eleventa",
+        path: "/dashboard/eleventa/depurador",
+        icon: PackageSearch
     },
     {
         name: "Configuración",
@@ -67,7 +73,7 @@ export default function Sidebar() {
                         <NavLink
                             key={item.path}
                             to={item.path}
-                            end={item.path === "/" || item.path === "/dashboard"}
+                            end={item.path === "/" || item.path === "/dashboard" || item.path === "/dashboard/eleventa"}
                             className={({ isActive }) =>
                                 `
                                 flex

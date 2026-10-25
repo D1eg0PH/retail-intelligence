@@ -160,6 +160,84 @@ public sealed class EleventaSyncService(AppDbContext db)
             productCount, totalUnits, inventoryCost, salesCount, salesValue, skip, take, totalProducts, products);
     }
 
+    public async Task<EleventaProductCleanupResponse> GetProductCleanupAsync(
+        Guid sourceId, int skip, int take, int inactiveDays, string? search, string? classification, CancellationToken ct)
+    {
+        var snapshot = await db.EleventaInventorySnapshots.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.IsComplete)
+            .OrderByDescending(s => s.ExtractedAt)
+            .Select(s => new { s.SnapshotId, s.ExtractedAt })
+            .FirstOrDefaultAsync(ct);
+
+        var products = await db.EleventaProducts.AsNoTracking().Where(p => p.SourceId == sourceId)
+            .Select(p => new
+            {
+                p.SourceProductId, p.CodeOriginal, p.DescriptionOriginal, p.Cost, p.SalePrice, p.DeletedAt
+            }).ToListAsync(ct);
+
+        var inventory = snapshot is null
+            ? new Dictionary<int, decimal>()
+            : await db.EleventaInventoryRows.AsNoTracking()
+                .Where(row => row.SourceId == sourceId && row.SnapshotId == snapshot.SnapshotId)
+                .GroupBy(row => row.SourceProductId)
+                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(row => row.Quantity) })
+                .ToDictionaryAsync(row => row.ProductId, row => row.Quantity, ct);
+
+        var saleQuery = from line in db.EleventaSaleLines.AsNoTracking()
+                        where line.SourceId == sourceId && line.SourceProductId != null
+                        join sale in db.EleventaSales.AsNoTracking()
+                            .Where(sale => sale.SourceId == sourceId && !sale.IsOpen && !sale.IsCancelled && sale.SoldAt != null)
+                            on new { line.SourceId, line.SourceTicketId } equals new { sale.SourceId, sale.SourceTicketId }
+                        group sale by line.SourceProductId!.Value into sales
+                        select new { ProductId = sales.Key, LastSoldAt = sales.Max(sale => sale.SoldAt) };
+        var lastSales = await saleQuery.ToDictionaryAsync(row => row.ProductId, row => row.LastSoldAt, ct);
+        var salesThrough = lastSales.Count == 0 ? null : lastSales.Values.Max();
+        var todayMexico = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City")).Date;
+
+        var all = products.Select(product =>
+        {
+            var hasInventory = inventory.TryGetValue(product.SourceProductId, out var quantity);
+            var lastSoldAt = lastSales.GetValueOrDefault(product.SourceProductId);
+            int? daysSinceSale = lastSoldAt is null ? null : Math.Max(0, (todayMexico - lastSoldAt.Value.Date).Days);
+            var classificationKey = product.DeletedAt is not null ? "deleted"
+                : !hasInventory ? "missing-inventory"
+                : quantity <= 0 ? "no-inventory"
+                : lastSoldAt is null ? "no-sales-observed"
+                : daysSinceSale >= inactiveDays ? "candidate"
+                : "recent-movement";
+            var inventoryCostValue = hasInventory && product.Cost is >= 0 ? quantity * product.Cost.Value : (decimal?)null;
+            return new EleventaCleanupProductDto(product.SourceProductId, product.CodeOriginal, product.DescriptionOriginal,
+                hasInventory ? quantity : null, product.Cost, product.SalePrice, lastSoldAt, daysSinceSale,
+                classificationKey, inventoryCostValue, product.DeletedAt is not null);
+        }).ToList();
+
+        var candidateProducts = all.Where(product => product.Classification == "candidate").ToList();
+        var filtered = all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            filtered = filtered.Where(product => product.Code.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                product.Description.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+        if (!string.IsNullOrWhiteSpace(classification) && classification != "all")
+            filtered = filtered.Where(product => product.Classification == classification);
+
+        var ordered = filtered.OrderBy(product => product.Classification == "candidate" ? 0 : 1)
+            .ThenByDescending(product => product.InventoryCostValue ?? 0m)
+            .ThenBy(product => product.Description, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return new(snapshot is null ? null : new DateTimeOffset(DateTime.SpecifyKind(snapshot.ExtractedAt, DateTimeKind.Utc)),
+            salesThrough, inactiveDays, all.Count, candidateProducts.Count,
+            candidateProducts.Sum(product => product.InventoryCostValue ?? 0m),
+            all.Count(product => product.Classification == "recent-movement"),
+            all.Count(product => product.Classification == "no-sales-observed"),
+            all.Count(product => product.Classification == "no-inventory"),
+            all.Count(product => product.Classification == "deleted"),
+            all.Count(product => product.Classification == "missing-inventory"),
+            skip, take, ordered.Count, ordered.Skip(skip).Take(take).ToList());
+    }
+
     private async Task PersistAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
     {
         switch (request.Kind)

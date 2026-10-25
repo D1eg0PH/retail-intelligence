@@ -56,4 +56,19 @@ public sealed class EleventaSyncController(EleventaSyncService syncService) : Co
         var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
         return Ok(await syncService.GetDashboardAsync(sourceId, skip, take, search, cancellationToken));
     }
+
+    [HttpGet("products/cleanup")]
+    public async Task<ActionResult<EleventaProductCleanupResponse>> GetProductCleanup(
+        [FromQuery] int skip = 0, [FromQuery] int take = 100, [FromQuery] int inactiveDays = 60,
+        [FromQuery] string? search = null, [FromQuery] string? classification = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (skip < 0 || take is < 1 or > 500 || inactiveDays is < 30 or > 365)
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Parámetros inválidos", Detail = "skip debe ser no negativo, take entre 1 y 500 e inactiveDays entre 30 y 365." });
+        var validClassifications = new[] { "all", "candidate", "recent-movement", "no-sales-observed", "no-inventory", "deleted", "missing-inventory" };
+        if (classification is not null && !validClassifications.Contains(classification, StringComparer.Ordinal))
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Clasificación inválida", Detail = "La clasificación solicitada no existe." });
+        var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
+        return Ok(await syncService.GetProductCleanupAsync(sourceId, skip, take, inactiveDays, search, classification, cancellationToken));
+    }
 }

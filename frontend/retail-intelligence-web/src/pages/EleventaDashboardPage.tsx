@@ -23,11 +23,12 @@ type DashboardData = {
     products: DashboardProduct[];
 };
 
+const tokenStorageKey = "retail-intelligence-eleventa-token";
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const number = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 });
 
 export default function EleventaDashboardPage() {
-    const [token, setToken] = useState("");
+    const [token, setToken] = useState(() => sessionStorage.getItem(tokenStorageKey) ?? "");
     const [tokenInput, setTokenInput] = useState("");
     const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
@@ -65,6 +66,7 @@ export default function EleventaDashboardPage() {
         event.preventDefault();
         const trimmed = tokenInput.trim();
         if (!trimmed) return;
+        sessionStorage.setItem(tokenStorageKey, trimmed);
         setData(null);
         setToken(trimmed);
     }
@@ -151,7 +153,7 @@ export default function EleventaDashboardPage() {
                         <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">El inventario corresponde a la última captura completa recibida. La actividad de ventas resume los últimos 30 días sincronizados.</p>
                     </section>
 
-                    <button onClick={() => { setToken(""); setTokenInput(""); setData(null); }} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
+                    <button onClick={() => { sessionStorage.removeItem(tokenStorageKey); setToken(""); setTokenInput(""); setData(null); }} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
                 </>
             )}
         </div>
