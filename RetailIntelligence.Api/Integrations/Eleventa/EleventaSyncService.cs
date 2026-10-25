@@ -181,9 +181,9 @@ public sealed class EleventaSyncService(AppDbContext db)
         var departments = products
             .Where(product => product.SourceDepartmentId is not null)
             .GroupBy(product => product.SourceDepartmentId!.Value)
-            .Select(group => new EleventaDepartmentOptionDto(group.Key,
+            .Select(group => new EleventaCleanupDepartmentDto(group.Key,
                 group.Select(product => product.SourceDepartmentName).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
-                    ?? $"Departamento {group.Key}"))
+                    ?? $"Departamento {group.Key}", group.Count()))
             .OrderBy(department => department.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

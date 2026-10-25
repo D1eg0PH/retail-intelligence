@@ -7,12 +7,13 @@ type CleanupProduct = {
     cost: number | null; salePrice: number | null; lastSoldAt: string | null;
     daysSinceSale: number | null; classification: string; inventoryCostValue: number | null; isDeleted: boolean;
 };
+type CleanupDepartment = { departmentId: number; name: string; productCount: number };
 type CleanupData = {
     inventoryAtUtc: string | null; salesThrough: string | null; inactiveDaysThreshold: number;
     totalProducts: number; candidateCount: number; candidateInventoryCostValue: number;
     recentMovementCount: number; noSalesObservedCount: number; noInventoryCount: number;
     deletedCount: number; missingInventoryCount: number; skip: number; take: number;
-    filteredCount: number; departments: { departmentId: number; name: string }[]; products: CleanupProduct[];
+    filteredCount: number; departments: CleanupDepartment[]; products: CleanupProduct[];
 };
 type CleanupFilter = "all" | "candidate" | "recent-movement" | "no-sales-observed" | "no-inventory" | "deleted" | "missing-inventory";
 
@@ -144,7 +145,9 @@ export default function EleventaProductCleanupPage() {
                         <select value={departmentId} onChange={event => { setDepartmentId(event.target.value); setSkip(0); }}
                             aria-label="Filtrar por departamento" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
                             <option value="all">Todos los departamentos</option>
-                            {data.departments.map(department => <option key={department.departmentId} value={department.departmentId}>{department.name}</option>)}
+                            {data.departments.map(department => <option key={department.departmentId} value={department.departmentId}>
+                                {department.name} ({department.productCount})
+                            </option>)}
                         </select>
                     </div>
                 </div>
@@ -184,6 +187,7 @@ export default function EleventaProductCleanupPage() {
                 </div>
             </section>
             <p className="text-xs text-slate-500">El valor usa el costo registrado en catálogo y la existencia de la última captura completa. Los productos sin costo quedan sin valuación.</p>
+            <p className="text-xs text-slate-500">El filtro muestra el ID del departamento de Eleventa; los nombres todavía no forman parte de la sincronización.</p>
             <button onClick={disconnect} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
         </>}
     </div>;

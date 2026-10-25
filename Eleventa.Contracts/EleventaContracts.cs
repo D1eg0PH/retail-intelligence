@@ -147,14 +147,14 @@ public sealed record EleventaCleanupProductDto(
     decimal? SalePrice, DateTime? LastSoldAt, int? DaysSinceSale, string Classification,
     decimal? InventoryCostValue, bool IsDeleted);
 
-public sealed record EleventaDepartmentOptionDto(int DepartmentId, string Name);
+public sealed record EleventaCleanupDepartmentDto(int DepartmentId, string Name, int ProductCount);
 
 public sealed record EleventaProductCleanupResponse(
     DateTimeOffset? InventoryAtUtc, DateTime? SalesThrough, int InactiveDaysThreshold,
     int TotalProducts, int CandidateCount, decimal CandidateInventoryCostValue,
     int RecentMovementCount, int NoSalesObservedCount, int NoInventoryCount,
     int DeletedCount, int MissingInventoryCount, int Skip, int Take, int FilteredCount,
-    IReadOnlyList<EleventaDepartmentOptionDto> Departments,
+    IReadOnlyList<EleventaCleanupDepartmentDto> Departments,
     IReadOnlyList<EleventaCleanupProductDto> Products);
 
 public sealed record EleventaOrderSuggestionsResponse(
