@@ -28,7 +28,9 @@ public sealed class EleventaProductDto
     public decimal? SalePrice { get; set; }
     public decimal? WholesalePrice { get; set; }
     public int? DepartmentId { get; set; }
+    public string? DepartmentName { get; set; }
     public int? SupplierId { get; set; }
+    public string? SupplierName { get; set; }
     public DateTime? CheckedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
     public bool IsKit { get; set; }
@@ -124,7 +126,7 @@ public sealed record EleventaSyncStatusResponse(
 
 public sealed record EleventaProductViewDto(
     int SourceProductId, string Code, string Description, decimal? Cost, decimal? SalePrice,
-    decimal? WholesalePrice, int? DepartmentId, int? SupplierId, DateTime? DeletedAt,
+    decimal? WholesalePrice, int? DepartmentId, string? DepartmentName, int? SupplierId, string? SupplierName, DateTime? DeletedAt,
     bool TracksInventory, DateTime? CreatedAtOrigin, string? CreatedAtSource, string? CreatedAtConfidence,
     DateTime? FirstSaleAt, DateTime? FirstInventoryMovementAt, DateTime ObservedAt);
 
@@ -150,3 +152,15 @@ public sealed record EleventaProductCleanupResponse(
     int RecentMovementCount, int NoSalesObservedCount, int NoInventoryCount,
     int DeletedCount, int MissingInventoryCount, int Skip, int Take, int FilteredCount,
     IReadOnlyList<EleventaCleanupProductDto> Products);
+
+public sealed record EleventaOrderSuggestionsResponse(
+    DateTimeOffset? InventoryAtUtc, DateTime SalesWindowStart, DateTime? SalesThrough,
+    short WeeksAverage, short TargetInventoryDays, decimal BufferPercent,
+    int ProductsWithSuggestions, decimal EstimatedCost,
+    IReadOnlyList<EleventaOrderSuggestionDto> Products);
+
+public sealed record EleventaOrderSuggestionDto(
+    int SourceProductId, string Code, string Description, int? DepartmentId, string? DepartmentName, int? SupplierId, string? SupplierName,
+    decimal SalesInPeriod, decimal AverageDailySales, decimal CurrentInventory,
+    decimal TargetQuantity, decimal SuggestedQuantity, decimal? Cost, decimal? EstimatedCost,
+    DateTime? LastSoldAt);

@@ -44,7 +44,9 @@ internal static class EleventaEntityConfiguration
             e.Property(x => x.DescriptionOriginal).HasColumnName("description_original").HasMaxLength(255);
             e.Property(x => x.Cost).HasColumnName("cost").HasPrecision(19,4); e.Property(x => x.SalePrice).HasColumnName("sale_price").HasPrecision(19,4);
             e.Property(x => x.WholesalePrice).HasColumnName("wholesale_price").HasPrecision(19,4); e.Property(x => x.SourceDepartmentId).HasColumnName("source_department_id");
-            e.Property(x => x.SourceSupplierId).HasColumnName("source_supplier_id"); e.Property(x => x.CheckedAt).HasColumnName("checked_at").HasColumnType("timestamp without time zone"); e.Property(x => x.DeletedAt).HasColumnName("deleted_at").HasColumnType("timestamp without time zone");
+            e.Property(x => x.SourceDepartmentName).HasColumnName("source_department_name").HasMaxLength(255);
+            e.Property(x => x.SourceSupplierId).HasColumnName("source_supplier_id"); e.Property(x => x.SourceSupplierName).HasColumnName("source_supplier_name").HasMaxLength(255);
+            e.Property(x => x.CheckedAt).HasColumnName("checked_at").HasColumnType("timestamp without time zone"); e.Property(x => x.DeletedAt).HasColumnName("deleted_at").HasColumnType("timestamp without time zone");
             e.Property(x => x.IsKit).HasColumnName("is_kit"); e.Property(x => x.TracksInventory).HasColumnName("tracks_inventory"); e.Property(x => x.CreatedAtOrigin).HasColumnName("created_at_origin").HasColumnType("timestamp without time zone");
             e.Property(x => x.CreatedAtSource).HasColumnName("created_at_source").HasMaxLength(40); e.Property(x => x.CreatedAtConfidence).HasColumnName("created_at_confidence").HasMaxLength(20);
             e.Property(x => x.FirstSaleAt).HasColumnName("first_sale_at").HasColumnType("timestamp without time zone"); e.Property(x => x.FirstInventoryMovementAt).HasColumnName("first_inventory_movement_at").HasColumnType("timestamp without time zone");

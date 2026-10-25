@@ -32,7 +32,9 @@ public sealed class EleventaProduct
     public decimal? SalePrice { get; set; }
     public decimal? WholesalePrice { get; set; }
     public int? SourceDepartmentId { get; set; }
+    public string? SourceDepartmentName { get; set; }
     public int? SourceSupplierId { get; set; }
+    public string? SourceSupplierName { get; set; }
     public DateTime? CheckedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
     public bool IsKit { get; set; }

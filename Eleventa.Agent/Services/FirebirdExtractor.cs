@@ -130,9 +130,13 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
     {
         var products = new List<EleventaProductDto>();
         await using var command = new FbCommand("""
-            SELECT ID, CODIGO, DESCRIPCION, PCOSTO, PVENTA, MAYOREO, DEPT, PROVID,
-                   CHECADO_EN, ELIMINADO_EN, ES_KIT, USA_INVENTARIO
-            FROM PRODUCTOS ORDER BY ID
+            SELECT p.ID, p.CODIGO, p.DESCRIPCION, p.PCOSTO, p.PVENTA, p.MAYOREO, p.DEPT, p.PROVID,
+                   d.NOMBRE AS DEPARTMENT_NAME, pr.NOMBRE AS SUPPLIER_NAME,
+                   p.CHECADO_EN, p.ELIMINADO_EN, p.ES_KIT, p.USA_INVENTARIO
+            FROM PRODUCTOS p
+            LEFT JOIN DEPARTAMENTOS d ON d.ID = p.DEPT
+            LEFT JOIN PROVEEDORES pr ON pr.ID = p.PROVID
+            ORDER BY p.ID
             """, connection, (FbTransaction)transaction);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -142,7 +146,8 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
                 SourceProductId = GetInt(reader, "ID"), Code = GetString(reader, "CODIGO"),
                 Description = GetString(reader, "DESCRIPCION"), Cost = GetDecimal(reader, "PCOSTO"),
                 SalePrice = GetDecimal(reader, "PVENTA"), WholesalePrice = GetDecimal(reader, "MAYOREO"),
-                DepartmentId = GetNullableInt(reader, "DEPT"), SupplierId = GetNullableInt(reader, "PROVID"),
+                DepartmentId = GetNullableInt(reader, "DEPT"), DepartmentName = NullIfBlank(GetString(reader, "DEPARTMENT_NAME")),
+                SupplierId = GetNullableInt(reader, "PROVID"), SupplierName = NullIfBlank(GetString(reader, "SUPPLIER_NAME")),
                 CheckedAt = GetDate(reader, "CHECADO_EN"), DeletedAt = GetDate(reader, "ELIMINADO_EN"),
                 IsKit = IsTrue(GetString(reader, "ES_KIT")), TracksInventory = IsTrue(GetString(reader, "USA_INVENTARIO")),
                 // No existe una fecha universal de creación en PRODUCTOS. La primera venta/movimiento

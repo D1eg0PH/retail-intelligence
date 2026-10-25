@@ -5,7 +5,8 @@ import {
     Barcode,
     Settings,
     Store,
-    PackageSearch
+    PackageSearch,
+    ClipboardList
 } from "lucide-react";
 
 import { NavLink } from "react-router-dom";
@@ -40,6 +41,11 @@ const menu = [
         name: "Depurador Eleventa",
         path: "/dashboard/eleventa/depurador",
         icon: PackageSearch
+    },
+    {
+        name: "Pedidos Eleventa",
+        path: "/dashboard/eleventa/pedidos",
+        icon: ClipboardList
     },
     {
         name: "Configuración",

@@ -71,4 +71,18 @@ public sealed class EleventaSyncController(EleventaSyncService syncService) : Co
         var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
         return Ok(await syncService.GetProductCleanupAsync(sourceId, skip, take, inactiveDays, search, classification, cancellationToken));
     }
+
+    [HttpGet("order-suggestions")]
+    public async Task<ActionResult<EleventaOrderSuggestionsResponse>> GetOrderSuggestions(CancellationToken cancellationToken)
+    {
+        var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
+        try
+        {
+            return Ok(await syncService.GetOrderSuggestionsAsync(sourceId, cancellationToken));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ProblemDetails { Status = 409, Title = "Configuración no disponible", Detail = ex.Message });
+        }
+    }
 }

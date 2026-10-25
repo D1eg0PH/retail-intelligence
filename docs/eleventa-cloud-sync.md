@@ -69,12 +69,16 @@ No hay migraciones EF en esta solución. Revisa y aplica `database/schema/03_ele
 
 Haz respaldo y aplica el SQL en staging primero. La API no llama `EnsureCreated` ni modifica el esquema al arrancar.
 
+Para almacenar los nombres de departamentos y proveedores sincronizados desde Firebird, aplica también `database/schema/05_eleventa_department_supplier_names.sql` antes de desplegar la versión de API que expone esos campos.
+
 ## Firebird y cuenta de lectura
 
 El agente configura servidor, ruta, puerto, usuario, contraseña, charset y dialecto externamente. En producción, pide al administrador de Firebird que cree una cuenta dedicada y conceda únicamente `SELECT` a estas tablas, verificando las particularidades de la instalación Eleventa:
 
 ```sql
 GRANT SELECT ON PRODUCTOS TO RETAIL_SYNC;
+GRANT SELECT ON DEPARTAMENTOS TO RETAIL_SYNC;
+GRANT SELECT ON PROVEEDORES TO RETAIL_SYNC;
 GRANT SELECT ON INVENTARIO_BALANCES TO RETAIL_SYNC;
 GRANT SELECT ON INVENTARIO_HISTORIAL TO RETAIL_SYNC;
 GRANT SELECT ON VENTATICKETS TO RETAIL_SYNC;

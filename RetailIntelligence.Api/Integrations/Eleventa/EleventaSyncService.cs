@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Data;
+using RetailIntelligence.Api.Entities;
 using RetailIntelligence.Contracts.Eleventa;
 
 namespace RetailIntelligence.Api.Integrations.Eleventa;
@@ -74,7 +75,8 @@ public sealed class EleventaSyncService(AppDbContext db)
         var total = await query.CountAsync(ct);
         var products = await query.OrderBy(p => p.SourceProductId).Skip(skip).Take(take)
             .Select(p => new EleventaProductViewDto(p.SourceProductId, p.CodeOriginal, p.DescriptionOriginal,
-                p.Cost, p.SalePrice, p.WholesalePrice, p.SourceDepartmentId, p.SourceSupplierId, p.DeletedAt,
+                p.Cost, p.SalePrice, p.WholesalePrice, p.SourceDepartmentId, p.SourceDepartmentName,
+                p.SourceSupplierId, p.SourceSupplierName, p.DeletedAt,
                 p.TracksInventory, p.CreatedAtOrigin, p.CreatedAtSource, p.CreatedAtConfidence,
                 p.FirstSaleAt, p.FirstInventoryMovementAt, p.ObservedAt))
             .ToListAsync(ct);
@@ -238,6 +240,82 @@ public sealed class EleventaSyncService(AppDbContext db)
             skip, take, ordered.Count, ordered.Skip(skip).Take(take).ToList());
     }
 
+    public async Task<EleventaOrderSuggestionsResponse> GetOrderSuggestionsAsync(Guid sourceId, CancellationToken ct)
+    {
+        var config = await db.ConfiguracionSistema.AsNoTracking().SingleOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("No existe la configuración del sistema.");
+        var weeks = Math.Max((short)1, config.SemanasPromedio);
+        var targetDays = Math.Max((short)1, config.DiasInventarioObjetivo);
+        var bufferPercent = Math.Max(0m, config.PorcentajeColchon);
+        var nowMexico = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City"));
+        var windowStart = nowMexico.Date.AddDays(-(7 * weeks) + 1);
+        var windowEnd = nowMexico.Date.AddDays(1);
+
+        var snapshot = await db.EleventaInventorySnapshots.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.IsComplete)
+            .OrderByDescending(s => s.ExtractedAt)
+            .Select(s => new { s.SnapshotId, s.ExtractedAt })
+            .FirstOrDefaultAsync(ct);
+
+        if (snapshot is null)
+            return new(null, windowStart, null, weeks, targetDays, bufferPercent, 0, 0m, []);
+
+        var inventory = await db.EleventaInventoryRows.AsNoTracking()
+            .Where(row => row.SourceId == sourceId && row.SnapshotId == snapshot.SnapshotId)
+            .GroupBy(row => row.SourceProductId)
+            .Select(group => new { ProductId = group.Key, Quantity = group.Sum(row => row.Quantity) })
+            .ToDictionaryAsync(row => row.ProductId, row => row.Quantity, ct);
+
+        var saleLines = await (from sale in db.EleventaSales.AsNoTracking()
+                               where sale.SourceId == sourceId && sale.SoldAt >= windowStart && sale.SoldAt < windowEnd
+                                   && !sale.IsOpen && !sale.IsCancelled
+                               join line in db.EleventaSaleLines.AsNoTracking().Where(line => line.SourceId == sourceId && line.SourceProductId != null)
+                                   on new { sale.SourceId, sale.SourceTicketId } equals new { line.SourceId, line.SourceTicketId }
+                               select new { ProductId = line.SourceProductId!.Value, line.Quantity, line.ReturnedQuantity, SoldAt = sale.SoldAt!.Value })
+            .ToListAsync(ct);
+        var sales = saleLines.GroupBy(line => line.ProductId)
+            .Select(group => new
+            {
+                ProductId = group.Key,
+                Quantity = group.Sum(line => Math.Max(0m, line.Quantity - line.ReturnedQuantity)),
+                LastSoldAt = group.Max(line => line.SoldAt)
+            }).ToList();
+
+        var salesByProduct = sales.ToDictionary(row => row.ProductId);
+        var products = await db.EleventaProducts.AsNoTracking()
+            .Where(product => product.SourceId == sourceId && product.DeletedAt == null && product.TracksInventory)
+            .Select(product => new
+            {
+                product.SourceProductId, product.CodeOriginal, product.DescriptionOriginal,
+                product.SourceDepartmentId, product.SourceDepartmentName, product.SourceSupplierId,
+                product.SourceSupplierName, product.Cost
+            }).ToListAsync(ct);
+
+        var suggestions = products
+            .Where(product => inventory.ContainsKey(product.SourceProductId) && salesByProduct.ContainsKey(product.SourceProductId))
+            .Select(product =>
+            {
+                var sold = salesByProduct[product.SourceProductId];
+                var averageDaily = sold.Quantity / (7m * weeks);
+                var target = averageDaily * targetDays * (1m + bufferPercent / 100m);
+                var suggested = Math.Max(0m, Math.Ceiling(target - inventory[product.SourceProductId]));
+                return new EleventaOrderSuggestionDto(product.SourceProductId, product.CodeOriginal,
+                    product.DescriptionOriginal, product.SourceDepartmentId, product.SourceDepartmentName,
+                    product.SourceSupplierId, product.SourceSupplierName,
+                    sold.Quantity, averageDaily, inventory[product.SourceProductId], target, suggested,
+                    product.Cost, product.Cost is >= 0 ? suggested * product.Cost.Value : null, sold.LastSoldAt);
+            })
+            .Where(product => product.SuggestedQuantity > 0)
+            .OrderByDescending(product => product.EstimatedCost ?? 0m)
+            .ThenBy(product => product.Description, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new(new DateTimeOffset(DateTime.SpecifyKind(snapshot.ExtractedAt, DateTimeKind.Utc)),
+            windowStart, sales.Count == 0 ? null : sales.Max(row => row.LastSoldAt), weeks, targetDays,
+            bufferPercent, suggestions.Count, suggestions.Sum(product => product.EstimatedCost ?? 0m), suggestions);
+    }
+
     private async Task PersistAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
     {
         switch (request.Kind)
@@ -261,7 +339,9 @@ public sealed class EleventaSyncService(AppDbContext db)
                     if (item.SalePrice is >= 0) entity.SalePrice = item.SalePrice;
                     if (item.WholesalePrice is >= 0) entity.WholesalePrice = item.WholesalePrice;
                     if (item.DepartmentId is not null) entity.SourceDepartmentId = item.DepartmentId;
+                    if (item.DepartmentName is not null) entity.SourceDepartmentName = item.DepartmentName;
                     if (item.SupplierId is not null) entity.SourceSupplierId = item.SupplierId;
+                    if (item.SupplierName is not null) entity.SourceSupplierName = item.SupplierName;
                     if (item.CheckedAt is not null) entity.CheckedAt = item.CheckedAt;
                     entity.DeletedAt = item.DeletedAt;
                     entity.IsKit = item.IsKit;
