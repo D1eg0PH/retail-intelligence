@@ -138,3 +138,15 @@ public sealed record EleventaDashboardResponse(
     DateTimeOffset? InventoryAtUtc, int ProductCount, decimal TotalUnits,
     decimal InventoryCostValue, int SalesLast30Days, decimal SalesValueLast30Days,
     int Skip, int Take, int TotalProducts, IReadOnlyList<EleventaDashboardProductDto> Products);
+
+public sealed record EleventaCleanupProductDto(
+    int SourceProductId, string Code, string Description, decimal? Quantity, decimal? Cost,
+    decimal? SalePrice, DateTime? LastSoldAt, int? DaysSinceSale, string Classification,
+    decimal? InventoryCostValue, bool IsDeleted);
+
+public sealed record EleventaProductCleanupResponse(
+    DateTimeOffset? InventoryAtUtc, DateTime? SalesThrough, int InactiveDaysThreshold,
+    int TotalProducts, int CandidateCount, decimal CandidateInventoryCostValue,
+    int RecentMovementCount, int NoSalesObservedCount, int NoInventoryCount,
+    int DeletedCount, int MissingInventoryCount, int Skip, int Take, int FilteredCount,
+    IReadOnlyList<EleventaCleanupProductDto> Products);

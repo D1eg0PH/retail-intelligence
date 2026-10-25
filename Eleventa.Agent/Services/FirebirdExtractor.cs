@@ -99,10 +99,8 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
             var batch = CreateBatch("sales", now, sales: sales); batch.CursorAfter = after.ToString();
             batches.Add((batch, "sales-scan-cursor", after.ToString()));
         }
-        else
-        {
-            batches.Add((CreateBatch("cursor-reset", now), "sales-scan-cursor", "0"));
-        }
+        // Keep the last confirmed cursor when there are no new tickets. Resetting it here
+        // would make the agent replay the entire lookback window on every idle cycle.
 
         var returns = await ReadReturnsAsync(connection, transaction, returnCursor, returnsWindowStart, ct);
         if (returns.Count > 0)
@@ -111,10 +109,8 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
             var batch = CreateBatch("returns", now, returns: returns); batch.CursorAfter = after.ToString();
             batches.Add((batch, "returns-scan-cursor", after.ToString()));
         }
-        else
-        {
-            batches.Add((CreateBatch("cursor-reset", now), "returns-scan-cursor", "0"));
-        }
+        // Keep the last confirmed cursor when there are no new returns so subsequent
+        // cycles remain incremental instead of replaying the lookback window.
 
         await transaction.CommitAsync(ct);
         logger.LogInformation("Extracción Firebird terminada: {BatchCount} lotes pendientes.", batches.Count);
@@ -198,7 +194,7 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
     private async Task<List<EleventaSaleDto>> ReadSalesAsync(FbConnection connection, DbTransaction transaction, int cursor,
         DateTime since, IReadOnlyDictionary<string, int> productIdsByCode, CancellationToken ct, int? requestedLimit = null)
     {
-        var limit = requestedLimit ?? Math.Clamp(options.Integration.BatchSize, 1, 100);
+        var limit = requestedLimit ?? Math.Clamp(options.Integration.BatchSize, 1, 500);
         var tickets = new List<EleventaSaleDto>();
         await using (var command = new FbCommand($"""
             SELECT FIRST {limit} ID,FOLIO,CREADO_EN,VENDIDO_EN,PAGADO_EN,TOTAL,GANANCIA,
@@ -257,7 +253,7 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
     private async Task<List<EleventaReturnDto>> ReadReturnsAsync(FbConnection connection, DbTransaction transaction, int cursor,
         DateTime since, CancellationToken ct, int? requestedLimit = null)
     {
-        var limit = requestedLimit ?? Math.Clamp(options.Integration.BatchSize, 1, 100);
+        var limit = requestedLimit ?? Math.Clamp(options.Integration.BatchSize, 1, 500);
         var returns = new List<EleventaReturnDto>();
         await using (var command = new FbCommand($"""
             SELECT FIRST {limit} ID,TICKET_ID,TIPO_DEVOLUCION,PAGADO_EN,DEVUELTO_EN,CAJERO,CAJA,TOTAL_DEVUELTO
