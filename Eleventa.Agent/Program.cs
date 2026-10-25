@@ -55,6 +55,17 @@ if (args.Contains("--requeue-deadletters", StringComparer.OrdinalIgnoreCase))
     Console.WriteLine($"Se reactivaron {count} lotes fallidos para reintentar.");
     return;
 }
+if (args.Contains("--refresh-catalog", StringComparer.OrdinalIgnoreCase))
+{
+    Directory.CreateDirectory(options.Integration.StateDirectory);
+    using var maintenanceLock = new FileStream(Path.Combine(options.Integration.StateDirectory, "agent.lock"),
+        FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+    var store = new OutboxStore(Path.Combine(options.Integration.StateDirectory, "sync-state.json"));
+    await store.InitializeAsync(CancellationToken.None);
+    await store.RemoveStateAsync("catalog-last-at", CancellationToken.None);
+    Console.WriteLine("Catálogo marcado para sincronización en el siguiente ciclo del agente.");
+    return;
+}
 builder.Services.AddSingleton(options);
 builder.Services.AddWindowsService(settings => settings.ServiceName = "Retail Intelligence Eleventa Sync");
 LoggerProviderOptions.RegisterProviderOptions<EventLogSettings, EventLogLoggerProvider>(builder.Services);

@@ -345,10 +345,10 @@ public sealed class EleventaSyncService(AppDbContext db)
                     if (item.Cost is >= 0) entity.Cost = item.Cost;
                     if (item.SalePrice is >= 0) entity.SalePrice = item.SalePrice;
                     if (item.WholesalePrice is >= 0) entity.WholesalePrice = item.WholesalePrice;
-                    if (item.DepartmentId is not null) entity.SourceDepartmentId = item.DepartmentId;
-                    if (item.DepartmentName is not null) entity.SourceDepartmentName = item.DepartmentName;
-                    if (item.SupplierId is not null) entity.SourceSupplierId = item.SupplierId;
-                    if (item.SupplierName is not null) entity.SourceSupplierName = item.SupplierName;
+                    entity.SourceDepartmentId = item.DepartmentId;
+                    entity.SourceDepartmentName = item.DepartmentName;
+                    entity.SourceSupplierId = item.SupplierId;
+                    entity.SourceSupplierName = item.SupplierName;
                     if (item.CheckedAt is not null) entity.CheckedAt = item.CheckedAt;
                     entity.DeletedAt = item.DeletedAt;
                     entity.IsKit = item.IsKit;
