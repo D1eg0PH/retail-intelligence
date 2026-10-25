@@ -10,6 +10,7 @@ import ConfiguracionPage from "./pages/ConfiguracionPage";
 import DepuracionProductosPage from "./pages/DepuracionProductosPage";
 import EleventaDashboardPage from "./pages/EleventaDashboardPage";
 import EleventaProductCleanupPage from "./pages/EleventaProductCleanupPage";
+import EleventaOrderSuggestionsPage from "./pages/EleventaOrderSuggestionsPage";
 
 function App() {
     return (
@@ -55,6 +56,11 @@ function App() {
                     <Route
                         path="/dashboard/eleventa/depurador"
                         element={<EleventaProductCleanupPage />}
+                    />
+
+                    <Route
+                        path="/dashboard/eleventa/pedidos"
+                        element={<EleventaOrderSuggestionsPage />}
                     />
 
                 </Route>
