@@ -161,7 +161,7 @@ public sealed class EleventaSyncService(AppDbContext db)
     }
 
     public async Task<EleventaProductCleanupResponse> GetProductCleanupAsync(
-        Guid sourceId, int skip, int take, int inactiveDays, string? search, string? classification, CancellationToken ct)
+        Guid sourceId, int skip, int take, int inactiveDays, string? search, string? classification, int? departmentId, CancellationToken ct)
     {
         var snapshot = await db.EleventaInventorySnapshots.AsNoTracking()
             .Where(s => s.SourceId == sourceId && s.IsComplete)
@@ -172,7 +172,7 @@ public sealed class EleventaSyncService(AppDbContext db)
         var products = await db.EleventaProducts.AsNoTracking().Where(p => p.SourceId == sourceId)
             .Select(p => new
             {
-                p.SourceProductId, p.CodeOriginal, p.DescriptionOriginal, p.Cost, p.SalePrice, p.DeletedAt
+                p.SourceProductId, p.SourceDepartmentId, p.CodeOriginal, p.DescriptionOriginal, p.Cost, p.SalePrice, p.DeletedAt
             }).ToListAsync(ct);
 
         var inventory = snapshot is null
@@ -207,10 +207,15 @@ public sealed class EleventaSyncService(AppDbContext db)
                 : daysSinceSale >= inactiveDays ? "candidate"
                 : "recent-movement";
             var inventoryCostValue = hasInventory && product.Cost is >= 0 ? quantity * product.Cost.Value : (decimal?)null;
-            return new EleventaCleanupProductDto(product.SourceProductId, product.CodeOriginal, product.DescriptionOriginal,
+            return new EleventaCleanupProductDto(product.SourceProductId, product.SourceDepartmentId, product.CodeOriginal, product.DescriptionOriginal,
                 hasInventory ? quantity : null, product.Cost, product.SalePrice, lastSoldAt, daysSinceSale,
                 classificationKey, inventoryCostValue, product.DeletedAt is not null);
         }).ToList();
+
+        var departments = products.Where(product => product.SourceDepartmentId is not null)
+            .GroupBy(product => product.SourceDepartmentId!.Value)
+            .Select(group => new EleventaCleanupDepartmentDto(group.Key, group.Count()))
+            .OrderBy(department => department.DepartmentId).ToList();
 
         var candidateProducts = all.Where(product => product.Classification == "candidate").ToList();
         var filtered = all.AsEnumerable();
@@ -222,6 +227,8 @@ public sealed class EleventaSyncService(AppDbContext db)
         }
         if (!string.IsNullOrWhiteSpace(classification) && classification != "all")
             filtered = filtered.Where(product => product.Classification == classification);
+        if (departmentId is not null)
+            filtered = filtered.Where(product => product.DepartmentId == departmentId);
 
         var ordered = filtered.OrderBy(product => product.Classification == "candidate" ? 0 : 1)
             .ThenByDescending(product => product.InventoryCostValue ?? 0m)
@@ -235,7 +242,7 @@ public sealed class EleventaSyncService(AppDbContext db)
             all.Count(product => product.Classification == "no-inventory"),
             all.Count(product => product.Classification == "deleted"),
             all.Count(product => product.Classification == "missing-inventory"),
-            skip, take, ordered.Count, ordered.Skip(skip).Take(take).ToList());
+            skip, take, ordered.Count, departments, ordered.Skip(skip).Take(take).ToList());
     }
 
     private async Task PersistAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)

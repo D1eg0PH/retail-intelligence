@@ -3,16 +3,17 @@ import { AlertTriangle, Boxes, Clock3, PackageSearch, RefreshCw, Search } from "
 import { api } from "../api/axios";
 
 type CleanupProduct = {
-    sourceProductId: number; code: string; description: string; quantity: number | null;
+    sourceProductId: number; departmentId: number | null; code: string; description: string; quantity: number | null;
     cost: number | null; salePrice: number | null; lastSoldAt: string | null;
     daysSinceSale: number | null; classification: string; inventoryCostValue: number | null; isDeleted: boolean;
 };
+type CleanupDepartment = { departmentId: number; productCount: number };
 type CleanupData = {
     inventoryAtUtc: string | null; salesThrough: string | null; inactiveDaysThreshold: number;
     totalProducts: number; candidateCount: number; candidateInventoryCostValue: number;
     recentMovementCount: number; noSalesObservedCount: number; noInventoryCount: number;
     deletedCount: number; missingInventoryCount: number; skip: number; take: number;
-    filteredCount: number; products: CleanupProduct[];
+    filteredCount: number; departments: CleanupDepartment[]; products: CleanupProduct[];
 };
 type CleanupFilter = "all" | "candidate" | "recent-movement" | "no-sales-observed" | "no-inventory" | "deleted" | "missing-inventory";
 
@@ -36,6 +37,7 @@ export default function EleventaProductCleanupPage() {
     const [search, setSearch] = useState("");
     const [inactiveDays, setInactiveDays] = useState(60);
     const [classification, setClassification] = useState<CleanupFilter>("all");
+    const [departmentId, setDepartmentId] = useState("all");
     const [skip, setSkip] = useState(0);
     const [data, setData] = useState<CleanupData | null>(null);
     const [loading, setLoading] = useState(false);
@@ -46,7 +48,8 @@ export default function EleventaProductCleanupPage() {
         try {
             const response = await api.get<CleanupData>("/integrations/eleventa/v1/products/cleanup", {
                 headers: { Authorization: `Bearer ${apiToken}` },
-                params: { skip, take: pageSize, inactiveDays, search: search || undefined, classification }
+                params: { skip, take: pageSize, inactiveDays, search: search || undefined, classification,
+                    departmentId: departmentId === "all" ? undefined : Number(departmentId) }
             });
             setData(response.data);
         } catch (err: unknown) {
@@ -56,7 +59,7 @@ export default function EleventaProductCleanupPage() {
                 : status ? `La API respondió con error HTTP ${status}. Intenta de nuevo más tarde.`
                     : `No se recibió respuesta de la API (${requestError.message ?? "error de red o CORS"}).`);
         } finally { setLoading(false); }
-    }, [classification, inactiveDays, search, skip]);
+    }, [classification, departmentId, inactiveDays, search, skip]);
 
     useEffect(() => { if (token) void load(token); }, [token, load]);
 
@@ -139,6 +142,13 @@ export default function EleventaProductCleanupPage() {
                             <option value="no-inventory">Sin existencia</option><option value="deleted">Eliminados en Eleventa</option>
                             <option value="missing-inventory">Sin dato de existencia</option>
                         </select>
+                        <select value={departmentId} onChange={event => { setDepartmentId(event.target.value); setSkip(0); }}
+                            aria-label="Filtrar por departamento" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+                            <option value="all">Todos los departamentos</option>
+                            {data.departments.map(department => <option key={department.departmentId} value={department.departmentId}>
+                                Departamento {department.departmentId} ({department.productCount})
+                            </option>)}
+                        </select>
                     </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -176,6 +186,7 @@ export default function EleventaProductCleanupPage() {
                 </div>
             </section>
             <p className="text-xs text-slate-500">El valor usa el costo registrado en catálogo y la existencia de la última captura completa. Los productos sin costo quedan sin valuación.</p>
+            <p className="text-xs text-slate-500">El filtro muestra el ID del departamento de Eleventa; los nombres todavía no forman parte de la sincronización.</p>
             <button onClick={disconnect} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
         </>}
     </div>;
