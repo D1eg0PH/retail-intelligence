@@ -3,11 +3,11 @@ import { AlertTriangle, Boxes, Clock3, PackageSearch, RefreshCw, Search } from "
 import { api } from "../api/axios";
 
 type CleanupProduct = {
-    sourceProductId: number; departmentId: number | null; code: string; description: string; quantity: number | null;
+    sourceProductId: number; code: string; description: string; departmentId: number | null; departmentName: string | null; quantity: number | null;
     cost: number | null; salePrice: number | null; lastSoldAt: string | null;
     daysSinceSale: number | null; classification: string; inventoryCostValue: number | null; isDeleted: boolean;
 };
-type CleanupDepartment = { departmentId: number; productCount: number };
+type CleanupDepartment = { departmentId: number; name: string; productCount: number };
 type CleanupData = {
     inventoryAtUtc: string | null; salesThrough: string | null; inactiveDaysThreshold: number;
     totalProducts: number; candidateCount: number; candidateInventoryCostValue: number;
@@ -146,15 +146,15 @@ export default function EleventaProductCleanupPage() {
                             aria-label="Filtrar por departamento" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
                             <option value="all">Todos los departamentos</option>
                             {data.departments.map(department => <option key={department.departmentId} value={department.departmentId}>
-                                Departamento {department.departmentId} ({department.productCount})
+                                {department.name} ({department.productCount})
                             </option>)}
                         </select>
                     </div>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[950px] text-left text-sm">
+                    <table className="w-full min-w-[1100px] text-left text-sm">
                         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>
-                            <th className="px-5 py-3">Código</th><th className="px-5 py-3">Producto</th>
+                            <th className="px-5 py-3">Código</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Departamento</th>
                             <th className="px-5 py-3 text-right">Existencia</th><th className="px-5 py-3 text-right">Costo</th>
                             <th className="px-5 py-3 text-right">Valor existencia</th><th className="px-5 py-3">Última venta</th>
                             <th className="px-5 py-3">Clasificación</th>
@@ -165,6 +165,7 @@ export default function EleventaProductCleanupPage() {
                                 return <tr key={product.sourceProductId} className="hover:bg-slate-50">
                                     <td className="px-5 py-3 font-mono text-slate-600">{product.code || "—"}</td>
                                     <td className="px-5 py-3 font-medium text-slate-900">{product.description || "Sin descripción"}</td>
+                                    <td className="px-5 py-3 text-slate-600">{product.departmentName || (product.departmentId == null ? "Sin departamento" : `Departamento ${product.departmentId}`)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.quantity == null ? "—" : number.format(product.quantity)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.cost == null ? "—" : money.format(product.cost)}</td>
                                     <td className="px-5 py-3 text-right tabular-nums">{product.inventoryCostValue == null ? "—" : money.format(product.inventoryCostValue)}</td>
@@ -172,7 +173,7 @@ export default function EleventaProductCleanupPage() {
                                     <td className="px-5 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badge.classes}`}>{badge.label}</span></td>
                                 </tr>;
                             })}
-                            {data.products.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay productos para estos filtros."}</td></tr>}
+                            {data.products.length === 0 && <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay productos para estos filtros."}</td></tr>}
                         </tbody>
                     </table>
                 </div>

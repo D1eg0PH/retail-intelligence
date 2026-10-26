@@ -142,11 +142,12 @@ public sealed record EleventaDashboardResponse(
     int Skip, int Take, int TotalProducts, IReadOnlyList<EleventaDashboardProductDto> Products);
 
 public sealed record EleventaCleanupProductDto(
-    int SourceProductId, int? DepartmentId, string Code, string Description, decimal? Quantity, decimal? Cost,
+    int SourceProductId, string Code, string Description, int? DepartmentId, string? DepartmentName,
+    decimal? Quantity, decimal? Cost,
     decimal? SalePrice, DateTime? LastSoldAt, int? DaysSinceSale, string Classification,
     decimal? InventoryCostValue, bool IsDeleted);
 
-public sealed record EleventaCleanupDepartmentDto(int DepartmentId, int ProductCount);
+public sealed record EleventaCleanupDepartmentDto(int DepartmentId, string Name, int ProductCount);
 
 public sealed record EleventaProductCleanupResponse(
     DateTimeOffset? InventoryAtUtc, DateTime? SalesThrough, int InactiveDaysThreshold,
