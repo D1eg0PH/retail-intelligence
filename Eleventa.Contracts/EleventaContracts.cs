@@ -149,12 +149,22 @@ public sealed record EleventaCleanupProductDto(
 
 public sealed record EleventaCleanupDepartmentDto(int DepartmentId, string Name, int ProductCount);
 
+public sealed record EleventaCleanupClassificationChartDto(string Classification, string Label, int ProductCount);
+
+public sealed record EleventaCleanupDepartmentValueChartDto(
+    int? DepartmentId, string DepartmentName, int CandidateCount, decimal InventoryCostValue);
+
+public sealed record EleventaCleanupSalesAgeChartDto(string Bucket, string Label, int ProductCount);
+
 public sealed record EleventaProductCleanupResponse(
     DateTimeOffset? InventoryAtUtc, DateTime? SalesThrough, int InactiveDaysThreshold,
     int TotalProducts, int CandidateCount, decimal CandidateInventoryCostValue,
     int RecentMovementCount, int NoSalesObservedCount, int NoInventoryCount,
     int DeletedCount, int MissingInventoryCount, int Skip, int Take, int FilteredCount,
     IReadOnlyList<EleventaCleanupDepartmentDto> Departments,
+    IReadOnlyList<EleventaCleanupClassificationChartDto> ClassificationChart,
+    IReadOnlyList<EleventaCleanupDepartmentValueChartDto> DepartmentValueChart,
+    IReadOnlyList<EleventaCleanupSalesAgeChartDto> SalesAgeChart,
     IReadOnlyList<EleventaCleanupProductDto> Products);
 
 public sealed record EleventaOrderSuggestionsResponse(

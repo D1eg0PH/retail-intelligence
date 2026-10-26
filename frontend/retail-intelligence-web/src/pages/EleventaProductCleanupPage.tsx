@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { AlertTriangle, Boxes, Clock3, PackageSearch, RefreshCw, Search } from "lucide-react";
 import { api } from "../api/axios";
 
@@ -14,6 +14,9 @@ type CleanupData = {
     recentMovementCount: number; noSalesObservedCount: number; noInventoryCount: number;
     deletedCount: number; missingInventoryCount: number; skip: number; take: number;
     filteredCount: number; departments: CleanupDepartment[]; products: CleanupProduct[];
+    classificationChart: { classification: string; label: string; productCount: number }[];
+    departmentValueChart: { departmentId: number | null; departmentName: string; candidateCount: number; inventoryCostValue: number }[];
+    salesAgeChart: { bucket: string; label: string; productCount: number }[];
 };
 type CleanupFilter = "all" | "candidate" | "recent-movement" | "no-sales-observed" | "no-inventory" | "deleted" | "missing-inventory";
 
@@ -107,6 +110,30 @@ export default function EleventaProductCleanupPage() {
                 <p className="mt-1">Se calculan con las ventas recibidas en Retail Intelligence. Mientras termina la carga inicial, las clasificaciones pueden cambiar. “Sin venta observada” no confirma que el producto nunca se haya vendido.</p>
             </div>
 
+            <section aria-label="Gráficos de análisis del catálogo" className="grid gap-4 xl:grid-cols-3">
+                <ChartCard title="Productos por clasificación" subtitle="Catálogo completo">
+                    <BarList items={data.classificationChart.map(item => ({
+                        label: item.label, value: item.productCount,
+                        color: item.classification === "candidate" ? "bg-amber-500"
+                            : item.classification === "recent-movement" ? "bg-emerald-500"
+                                : item.classification === "no-sales-observed" ? "bg-slate-500"
+                                    : item.classification === "no-inventory" ? "bg-blue-500"
+                                        : item.classification === "deleted" ? "bg-rose-500" : "bg-violet-500"
+                    }))} />
+                </ChartCard>
+                <ChartCard title="Valor candidato por departamento" subtitle="Existencia × costo de productos candidatos">
+                    <BarList items={data.departmentValueChart.map(item => ({
+                        label: item.departmentName, value: item.inventoryCostValue, detail: `${number.format(item.candidateCount)} productos`, color: "bg-blue-600"
+                    }))} formatValue={value => money.format(value)} emptyLabel="No hay candidatos con valor registrado." />
+                </ChartCard>
+                <ChartCard title="Antigüedad de última venta" subtitle="Productos con existencia positiva; excluye eliminados">
+                    <BarList items={data.salesAgeChart.map((item, index) => ({
+                        label: item.label, value: item.productCount,
+                        color: ["bg-slate-500", "bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-rose-600"][index]
+                    }))} />
+                </ChartCard>
+            </section>
+
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-slate-100 p-5">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -187,7 +214,6 @@ export default function EleventaProductCleanupPage() {
                 </div>
             </section>
             <p className="text-xs text-slate-500">El valor usa el costo registrado en catálogo y la existencia de la última captura completa. Los productos sin costo quedan sin valuación.</p>
-            <p className="text-xs text-slate-500">El filtro muestra el ID del departamento de Eleventa; los nombres todavía no forman parte de la sincronización.</p>
             <button onClick={disconnect} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
         </>}
     </div>;
@@ -198,5 +224,35 @@ function Metric({ icon: Icon, label, value, detail }: { icon: typeof PackageSear
         <div className="flex items-center justify-between text-slate-500"><span className="text-sm">{label}</span><Icon size={18} /></div>
         <p className="mt-3 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
         {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
+    </div>;
+}
+
+type BarItem = { label: string; value: number; detail?: string; color: string };
+
+function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+    return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="font-bold text-slate-900">{title}</h2>
+        <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+        <div className="mt-5">{children}</div>
+    </article>;
+}
+
+function BarList({ items, formatValue = value => number.format(value), emptyLabel = "Sin datos para mostrar." }: {
+    items: BarItem[]; formatValue?: (value: number) => string; emptyLabel?: string;
+}) {
+    const max = Math.max(1, ...items.map(item => item.value));
+    if (items.length === 0 || items.every(item => item.value === 0))
+        return <p className="py-8 text-center text-sm text-slate-500">{emptyLabel}</p>;
+    return <div className="space-y-3">
+        {items.map(item => <div key={item.label}>
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-xs">
+                <span className="truncate text-slate-600" title={item.label}>{item.label}</span>
+                <span className="shrink-0 font-semibold tabular-nums text-slate-800">{formatValue(item.value)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${item.label}: ${formatValue(item.value)}`}>
+                <div className={`h-full rounded-full ${item.color}`} style={{ width: `${Math.max(2, item.value / max * 100)}%` }} />
+            </div>
+            {item.detail && <p className="mt-1 text-[11px] text-slate-400">{item.detail}</p>}
+        </div>)}
     </div>;
 }
