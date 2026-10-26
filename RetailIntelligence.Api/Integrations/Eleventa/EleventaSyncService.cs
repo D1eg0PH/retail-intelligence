@@ -226,6 +226,36 @@ public sealed class EleventaSyncService(AppDbContext db)
         }).ToList();
 
         var candidateProducts = all.Where(product => product.Classification == "candidate").ToList();
+        var classificationLabels = new (string Key, string Label)[]
+        {
+            ("candidate", "Candidatos a revisión"),
+            ("recent-movement", "Movimiento reciente"),
+            ("no-sales-observed", "Sin venta observada"),
+            ("no-inventory", "Sin existencia"),
+            ("deleted", "Eliminados en Eleventa"),
+            ("missing-inventory", "Sin dato de existencia")
+        };
+        var classificationChart = classificationLabels.Select(item =>
+            new EleventaCleanupClassificationChartDto(item.Key, item.Label,
+                all.Count(product => product.Classification == item.Key))).ToList();
+        var departmentValueChart = candidateProducts
+            .GroupBy(product => product.DepartmentId)
+            .Select(group => new EleventaCleanupDepartmentValueChartDto(group.Key,
+                group.Select(product => product.DepartmentName).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
+                    ?? (group.Key is null ? "Sin departamento" : $"Departamento {group.Key}"),
+                group.Count(), group.Sum(product => product.InventoryCostValue ?? 0m)))
+            .OrderByDescending(item => item.InventoryCostValue)
+            .Take(8)
+            .ToList();
+        var inStockProducts = all.Where(product => !product.IsDeleted && product.Quantity is > 0).ToList();
+        var salesAgeChart = new EleventaCleanupSalesAgeChartDto[]
+        {
+            new("no-sales", "Sin venta observada", inStockProducts.Count(product => product.DaysSinceSale is null)),
+            new("0-59", "0–59 días", inStockProducts.Count(product => product.DaysSinceSale is >= 0 and <= 59)),
+            new("60-90", "60–90 días", inStockProducts.Count(product => product.DaysSinceSale is >= 60 and <= 90)),
+            new("91-180", "91–180 días", inStockProducts.Count(product => product.DaysSinceSale is >= 91 and <= 180)),
+            new("over-180", "Más de 180 días", inStockProducts.Count(product => product.DaysSinceSale > 180))
+        };
         var filtered = all.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -250,7 +280,8 @@ public sealed class EleventaSyncService(AppDbContext db)
             all.Count(product => product.Classification == "no-inventory"),
             all.Count(product => product.Classification == "deleted"),
             all.Count(product => product.Classification == "missing-inventory"),
-            skip, take, ordered.Count, departments, ordered.Skip(skip).Take(take).ToList());
+            skip, take, ordered.Count, departments, classificationChart, departmentValueChart, salesAgeChart,
+            ordered.Skip(skip).Take(take).ToList());
     }
 
     public async Task<EleventaOrderSuggestionsResponse> GetOrderSuggestionsAsync(Guid sourceId, CancellationToken ct)
