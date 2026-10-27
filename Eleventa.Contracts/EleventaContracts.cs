@@ -56,6 +56,8 @@ public sealed class EleventaInventoryRowDto
     public int SourceProductId { get; set; }
     public int SourceWarehouseId { get; set; }
     public decimal Quantity { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? UnitCost { get; set; }
 }
 
 public sealed class EleventaSaleDto
@@ -140,6 +142,14 @@ public sealed record EleventaDashboardResponse(
     DateTimeOffset? InventoryAtUtc, int ProductCount, decimal TotalUnits,
     decimal InventoryCostValue, int SalesLast30Days, decimal SalesValueLast30Days,
     int Skip, int Take, int TotalProducts, IReadOnlyList<EleventaDashboardProductDto> Products);
+
+public sealed record EleventaInventoryHistoryItem(
+    Guid SnapshotId, DateTimeOffset ExtractedAtUtc, int RowCount,
+    decimal TotalUnits, decimal KnownCostValue, int RowsWithoutCost,
+    decimal? TotalCostValue);
+
+public sealed record EleventaInventoryHistoryResponse(
+    int Skip, int Take, int Total, IReadOnlyList<EleventaInventoryHistoryItem> Snapshots);
 
 public sealed record EleventaCleanupProductDto(
     int SourceProductId, string Code, string Description, int? DepartmentId, string? DepartmentName,

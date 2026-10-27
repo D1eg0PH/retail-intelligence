@@ -49,6 +49,7 @@ internal static class Program
         }
 
         await context.Database.EnsureCreatedAsync();
+        await EleventaInventoryHistoryTests.RunAsync(context);
         if (await context.Productos.AnyAsync() ||
             await context.Importaciones.AnyAsync() ||
             await context.Pedidos.AnyAsync())

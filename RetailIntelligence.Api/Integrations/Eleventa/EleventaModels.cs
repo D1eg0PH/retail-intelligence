@@ -66,6 +66,7 @@ public sealed class EleventaInventoryRow
     public int SourceProductId { get; set; }
     public int SourceWarehouseId { get; set; }
     public decimal Quantity { get; set; }
+    public decimal? UnitCost { get; set; }
 }
 
 public sealed class EleventaSale

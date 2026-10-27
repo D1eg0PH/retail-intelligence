@@ -69,6 +69,37 @@ public sealed class EleventaSyncService(AppDbContext db)
             latestSnapshot is null ? null : new DateTimeOffset(DateTime.SpecifyKind(latestSnapshot.ExtractedAt, DateTimeKind.Utc)));
     }
 
+    public async Task<EleventaInventoryHistoryResponse> GetInventoryHistoryAsync(
+        Guid sourceId, int skip, int take, CancellationToken ct)
+    {
+        var query = db.EleventaInventorySnapshots.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.IsComplete);
+        var total = await query.CountAsync(ct);
+        var snapshots = await query.OrderByDescending(s => s.ExtractedAt).ThenBy(s => s.SnapshotId)
+            .Skip(skip).Take(take).ToListAsync(ct);
+        var ids = snapshots.Select(s => s.SnapshotId).ToArray();
+        var totals = await db.EleventaInventoryRows.AsNoTracking()
+            .Where(r => r.SourceId == sourceId && ids.Contains(r.SnapshotId))
+            .GroupBy(r => r.SnapshotId)
+            .Select(g => new
+            {
+                SnapshotId = g.Key, RowCount = g.Count(), TotalUnits = g.Sum(r => r.Quantity),
+                KnownCostValue = g.Sum(r => r.UnitCost != null && r.UnitCost >= 0 ? r.Quantity * r.UnitCost.Value : 0m),
+                RowsWithoutCost = g.Count(r => r.UnitCost == null || r.UnitCost < 0)
+            }).ToDictionaryAsync(g => g.SnapshotId, ct);
+        var items = snapshots.Select(s =>
+        {
+            totals.TryGetValue(s.SnapshotId, out var value);
+            var missing = value?.RowsWithoutCost ?? 0;
+            var knownValue = value?.KnownCostValue ?? 0m;
+            return new EleventaInventoryHistoryItem(s.SnapshotId,
+                new DateTimeOffset(DateTime.SpecifyKind(s.ExtractedAt, DateTimeKind.Utc)),
+                value?.RowCount ?? 0, value?.TotalUnits ?? 0m, knownValue, missing,
+                missing == 0 ? knownValue : null);
+        }).ToList();
+        return new(skip, take, total, items);
+    }
+
     public async Task<EleventaProductPageResponse> GetProductsAsync(Guid sourceId, int skip, int take, CancellationToken ct)
     {
         var query = db.EleventaProducts.AsNoTracking().Where(p => p.SourceId == sourceId);
@@ -442,17 +473,20 @@ public sealed class EleventaSyncService(AppDbContext db)
         {
             if (!existingRows.TryGetValue((row.SourceProductId, row.SourceWarehouseId), out var entity))
             {
+                if (snapshot.IsComplete)
+                    throw new EleventaBatchConflictException("No se pueden agregar registros a una captura completa.");
                 entity = new EleventaInventoryRow
                 {
                     SourceId = request.SourceId, SnapshotId = chunk.SnapshotId,
-                    SourceProductId = row.SourceProductId, SourceWarehouseId = row.SourceWarehouseId, Quantity = row.Quantity
+                    SourceProductId = row.SourceProductId, SourceWarehouseId = row.SourceWarehouseId,
+                    Quantity = row.Quantity, UnitCost = row.UnitCost
                 };
                 db.EleventaInventoryRows.Add(entity);
                 existingRows.Add((row.SourceProductId, row.SourceWarehouseId), entity);
             }
-            else if (entity.Quantity != row.Quantity)
+            else if (entity.Quantity != row.Quantity || entity.UnitCost != row.UnitCost)
             {
-                throw new EleventaBatchConflictException("El mismo producto y almacén llegó con cantidades distintas en un snapshot.");
+                throw new EleventaBatchConflictException("El mismo producto y almacén llegó con cantidades o costos distintos en un snapshot.");
             }
         }
 

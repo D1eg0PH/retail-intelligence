@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Activity, Boxes, DollarSign, Package, RefreshCw, Search } from "lucide-react";
 import { api } from "../api/axios";
+import EleventaInventoryHistory from "../components/EleventaInventoryHistory";
 
 type DashboardProduct = {
     sourceProductId: number;
@@ -153,6 +154,7 @@ export default function EleventaDashboardPage() {
                         <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">El inventario corresponde a la última captura completa recibida. La actividad de ventas resume los últimos 30 días sincronizados.</p>
                     </section>
 
+                    <EleventaInventoryHistory key={token} token={token} />
                     <button onClick={() => { sessionStorage.removeItem(tokenStorageKey); setToken(""); setTokenInput(""); setData(null); }} className="text-sm text-slate-500 underline hover:text-slate-800">Desconectar token</button>
                 </>
             )}
