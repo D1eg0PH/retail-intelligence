@@ -189,10 +189,10 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
     private static async Task<List<EleventaInventoryRowDto>> ReadInventoryAsync(FbConnection connection, DbTransaction transaction, CancellationToken ct)
     {
         var rows = new List<EleventaInventoryRowDto>();
-        await using var command = new FbCommand("SELECT PRODUCTO_ID, ALMACEN_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES ORDER BY ALMACEN_ID, PRODUCTO_ID", connection, (FbTransaction)transaction);
+        await using var command = new FbCommand("SELECT B.PRODUCTO_ID, B.ALMACEN_ID, B.CANTIDAD_ACTUAL, P.PCOSTO FROM INVENTARIO_BALANCES B LEFT JOIN PRODUCTOS P ON P.ID=B.PRODUCTO_ID ORDER BY B.ALMACEN_ID, B.PRODUCTO_ID", connection, (FbTransaction)transaction);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            rows.Add(new EleventaInventoryRowDto { SourceProductId = GetInt(reader, "PRODUCTO_ID"), SourceWarehouseId = GetInt(reader, "ALMACEN_ID"), Quantity = GetDecimal(reader, "CANTIDAD_ACTUAL") ?? 0m });
+            rows.Add(new EleventaInventoryRowDto { SourceProductId = GetInt(reader, "PRODUCTO_ID"), SourceWarehouseId = GetInt(reader, "ALMACEN_ID"), Quantity = GetDecimal(reader, "CANTIDAD_ACTUAL") ?? 0m, UnitCost = GetDecimal(reader, "PCOSTO") });
         return rows;
     }
 

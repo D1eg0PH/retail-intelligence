@@ -66,6 +66,7 @@ internal static class EleventaEntityConfiguration
             e.Property(x => x.SourceId).HasColumnName("source_id"); e.Property(x => x.SnapshotId).HasColumnName("snapshot_id");
             e.Property(x => x.SourceProductId).HasColumnName("source_product_id"); e.Property(x => x.SourceWarehouseId).HasColumnName("source_warehouse_id");
             e.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(24,10);
+            e.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(19,4);
             e.HasOne<EleventaInventorySnapshot>().WithMany().HasForeignKey(x => new { x.SourceId, x.SnapshotId });
         });
         b.Entity<EleventaSale>(e =>

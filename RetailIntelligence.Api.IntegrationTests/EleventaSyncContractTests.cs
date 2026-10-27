@@ -9,6 +9,7 @@ internal static class EleventaSyncContractTests
         var source = Guid.NewGuid();
         ValidCatalog(source);
         ValidInventory(source);
+        InventoryCostSerialization();
         ValidSales(source);
         ValidReturns(source);
         RejectsWrongSource(source);
@@ -19,7 +20,7 @@ internal static class EleventaSyncContractTests
         RejectsOversizedBatch(source);
         await VerifiesDurableOutboxAsync(source);
         await VerifiesDeadLetterRecoveryAsync(source);
-        Console.WriteLine("PASS: 12 Eleventa contract and local outbox checks.");
+        Console.WriteLine("PASS: 13 Eleventa contract and local outbox checks.");
     }
 
     private static void ValidCatalog(Guid source)
@@ -36,6 +37,19 @@ internal static class EleventaSyncContractTests
         batch.Inventory = new EleventaInventoryChunkDto { SnapshotId = Guid.NewGuid(), ExpectedRecordCount = 2, IsFinalChunk = false,
             Rows = [new() { SourceProductId = 1, SourceWarehouseId = 1, Quantity = -0.00000001m }] };
         EleventaSyncService.ValidateRequest(batch, source);
+    }
+
+    private static void InventoryCostSerialization()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var legacy = "{\"sourceProductId\":1,\"sourceWarehouseId\":1,\"quantity\":10}";
+        var row = System.Text.Json.JsonSerializer.Deserialize<EleventaInventoryRowDto>(legacy, options)!;
+        Assert(row.UnitCost is null, "legacy inventory has unknown cost");
+        Assert(System.Text.Json.JsonSerializer.Serialize(row, options) == legacy, "legacy payload hash remains unchanged");
+        row.UnitCost = 20.1234m;
+        var restored = System.Text.Json.JsonSerializer.Deserialize<EleventaInventoryRowDto>(
+            System.Text.Json.JsonSerializer.Serialize(row, options), options)!;
+        Assert(restored.UnitCost == 20.1234m, "captured cost retains four decimal places");
     }
 
     private static void ValidSales(Guid source)
