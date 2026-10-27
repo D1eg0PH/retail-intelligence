@@ -270,16 +270,18 @@ public class ImportService : IImportService
     }
 
 
-
-
-
     // IMPORTAR VENTAS POR PERIODO
     public async Task ImportSalesAsync(ImportSalesRequest request)
     {
+        // =========================================
+        // 1. VALIDAR EL PERIODO
+        // =========================================
 
-        if (request.DiasPeriodo.HasValue && (request.FechaInicio.HasValue || request.FechaFin.HasValue))
+        if (request.DiasPeriodo.HasValue &&
+            (request.FechaInicio.HasValue || request.FechaFin.HasValue))
         {
-            throw new Exception("Debe seleccionar un solo tipo de período: días o rango de fechas.");
+            throw new Exception(
+                "Debe seleccionar un solo tipo de período: días o rango de fechas.");
         }
 
         DateOnly fechaInicio;
@@ -288,143 +290,263 @@ public class ImportService : IImportService
         if (request.DiasPeriodo.HasValue)
         {
             if (request.DiasPeriodo.Value <= 0)
-                throw new Exception("Los días del período deben ser mayores a cero.");
+            {
+                throw new Exception(
+                    "Los días del período deben ser mayores a cero.");
+            }
 
             fechaFin = DateOnly.FromDateTime(DateTime.Today);
-            fechaInicio = fechaFin.AddDays(-(request.DiasPeriodo.Value - 1));
+            fechaInicio = fechaFin.AddDays(
+                -(request.DiasPeriodo.Value - 1));
         }
         else
         {
-            if (!request.FechaInicio.HasValue || !request.FechaFin.HasValue)
-                throw new Exception("Debe indicar un período de ventas.");
+            if (!request.FechaInicio.HasValue ||
+                !request.FechaFin.HasValue)
+            {
+                throw new Exception(
+                    "Debe indicar un período de ventas.");
+            }
 
             fechaInicio = request.FechaInicio.Value;
             fechaFin = request.FechaFin.Value;
 
             if (fechaInicio > fechaFin)
-                throw new Exception("La fecha inicial no puede ser mayor que la final.");
+            {
+                throw new Exception(
+                    "La fecha inicial no puede ser mayor que la final.");
+            }
         }
 
-        using var stream = request.File.OpenReadStream();
+        // =========================================
+        // 2. LEER Y VALIDAR EL EXCEL
+        // =========================================
 
+        using var stream = request.File.OpenReadStream();
         using var workbook = new XLWorkbook(stream);
 
         var worksheet = workbook.Worksheet(1);
 
         var expectedHeaders = new List<string>
-                    {
-                        "Código",
-                        "Descripción",
-                        "Cantidad",
-                        "Precio Usado",
-                        "Precio Costo",
-                        "Importe",
-                        "Departamento"
-                    };
+        {
+            "Código",
+            "Descripción",
+            "Cantidad",
+            "Precio Usado",
+            "Precio Costo",
+            "Importe",
+            "Departamento"
+        };
 
-        var actualHeaders = worksheet.Row(1).CellsUsed().Select(c => c.GetString().Trim()).ToList();
+        var actualHeaders = worksheet.Row(1)
+            .CellsUsed()
+            .Select(c => c.GetString().Trim())
+            .ToList();
 
         foreach (var expectedHeader in expectedHeaders)
         {
             if (!actualHeaders.Contains(expectedHeader))
             {
-                throw new Exception($"El archivo no contiene la columna requerida: {expectedHeader}");
+                throw new Exception(
+                    $"El archivo no contiene la columna requerida: {expectedHeader}");
             }
         }
 
-        Console.WriteLine("Encabezados válidos.");
+        var rows = worksheet.RowsUsed()
+            .Skip(1)
+            .Where(r => !r.IsEmpty())
+            .ToList();
 
-        var rows = worksheet.RowsUsed().Skip(1);
-
-        Console.WriteLine($"Registros encontrados: {rows.Count()}");
-
-
-        await _context.VentasPeriodo.ExecuteDeleteAsync();
-
-        await _context.Importaciones
-            .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
-            .ExecuteDeleteAsync();
-
-
-        var importacion = new Importacion
+        if (rows.Count == 0)
         {
-            TipoArchivo = "VENTAS_PERIODO",
-            NombreArchivo = request.File.FileName,
-            FechaInicioPeriodo = fechaInicio,
-            FechaFinPeriodo = fechaFin,
-            HashArchivo = Guid.NewGuid().ToString(),
-            RegistrosImportados = rows.Count(),
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+            throw new Exception(
+                "El archivo no contiene registros de ventas.");
+        }
 
-        _context.Importaciones.Add(importacion);
+        // =========================================
+        // 3. PREPARAR LOS DATOS ANTES DE MODIFICAR
+        //    LA BASE DE DATOS
+        // =========================================
 
-        await _context.SaveChangesAsync();
+        var productos = await _context.Productos
+            .Select(p => new
+            {
+                p.IdProducto,
+                p.Codigo
+            })
+            .ToListAsync();
 
+        var productosPorCodigo = productos
+            .GroupBy(p => p.Codigo)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First().IdProducto);
+
+        var ventasPreparadas =
+            new List<(
+                int IdProducto,
+                decimal Cantidad,
+                decimal PrecioUsado,
+                decimal PrecioCosto,
+                decimal Importe)>();
 
         foreach (var row in rows)
         {
             var codigo = row.Cell(1).GetString().Trim();
 
             var cantidad = LeerDecimal(row.Cell(3));
-
             var precioUsado = LeerDecimal(row.Cell(4));
-            
             var precioCosto = LeerDecimal(row.Cell(5));
-            
             var importe = LeerDecimal(row.Cell(6));
 
-
-            // DEBUG TEMPORAL
-            Console.WriteLine(
-                $"COD:{codigo} | " +
-                $"CANT:{cantidad} | " +
-                $"PRECIO:{precioUsado} | " +
-                $"IMPORTE:{importe}");
-
-            // Buscar producto previamente importado desde inventario
-            var producto = await _context.Productos.FirstOrDefaultAsync(p => p.Codigo == codigo);
-
-            if (producto == null)
+            if (!productosPorCodigo.TryGetValue(
+                codigo, out var idProducto))
             {
-                Console.WriteLine($"Producto no encontrado en catálogo: {codigo}");
+                Console.WriteLine(
+                    $"Producto no encontrado en catálogo: {codigo}");
+
                 continue;
             }
 
-            var venta = new VentaPeriodo
+            ventasPreparadas.Add((
+                idProducto,
+                cantidad,
+                precioUsado,
+                precioCosto,
+                importe));
+        }
+
+        if (ventasPreparadas.Count == 0)
+        {
+            throw new Exception(
+                "No se encontraron productos del archivo en el catálogo. " +
+                "No se modificó ninguna importación existente.");
+        }
+
+        // =========================================
+        // 4. COMPROBAR TRASLAPES Y GUARDAR
+        // =========================================
+
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            var importacionesExistentes = await _context.Importaciones
+                .Where(i => i.TipoArchivo == "VENTAS_PERIODO")
+                .ToListAsync();
+
+            // Dos periodos se traslapan si comparten al menos un día.
+            var traslapes = importacionesExistentes
+                .Where(i =>
+                    fechaInicio <= i.FechaFinPeriodo &&
+                    fechaFin >= i.FechaInicioPeriodo)
+                .ToList();
+
+            // Los traslapes parciales siempre se bloquean.
+            var traslapesParciales = traslapes
+                .Where(i =>
+                    i.FechaInicioPeriodo != fechaInicio ||
+                    i.FechaFinPeriodo != fechaFin)
+                .ToList();
+
+            if (traslapesParciales.Count > 0)
             {
-                IdProducto = producto.IdProducto,
+                var periodosConflicto = string.Join(
+                    "; ",
+                    traslapesParciales.Select(i =>
+                        $"{i.FechaInicioPeriodo:dd/MM/yyyy} al " +
+                        $"{i.FechaFinPeriodo:dd/MM/yyyy}"));
 
-                IdImportacion = importacion.IdImportacion,
+                throw new Exception(
+                    $"No se puede importar el período " +
+                    $"{fechaInicio:dd/MM/yyyy} al {fechaFin:dd/MM/yyyy} " +
+                    $"porque se traslapa con estas importaciones existentes: " +
+                    $"{periodosConflicto}. " +
+                    "Modifica las fechas para evitar traslapes.");
+            }
 
-                CantidadVendida = cantidad,
+            // Si las fechas coinciden exactamente, reemplazar
+            // solamente las importaciones de ese mismo periodo.
+            if (traslapes.Count > 0)
+            {
+                var idsImportacionesAnteriores = traslapes
+                    .Select(i => i.IdImportacion)
+                    .ToList();
 
-                PrecioUsado = precioUsado,
+                await _context.VentasPeriodo
+                    .Where(v =>
+                        idsImportacionesAnteriores.Contains(v.IdImportacion))
+                    .ExecuteDeleteAsync();
 
-                PrecioCosto = precioCosto,
+                await _context.Importaciones
+                    .Where(i =>
+                        idsImportacionesAnteriores.Contains(i.IdImportacion))
+                    .ExecuteDeleteAsync();
 
-                Importe = importe,
+                Console.WriteLine(
+                    $"Se reemplazará la importación anterior del período " +
+                    $"{fechaInicio:dd/MM/yyyy} al {fechaFin:dd/MM/yyyy}.");
+            }
 
+            // Crear la nueva importación.
+            var importacion = new Importacion
+            {
+                TipoArchivo = "VENTAS_PERIODO",
+                NombreArchivo = request.File.FileName,
+                FechaInicioPeriodo = fechaInicio,
+                FechaFinPeriodo = fechaFin,
+                HashArchivo = Guid.NewGuid().ToString(),
+                RegistrosImportados = rows.Count,
                 CreatedAt = DateTime.UtcNow,
-
                 UpdatedAt = DateTime.UtcNow
             };
 
-            _context.VentasPeriodo.Add(venta);
+            _context.Importaciones.Add(importacion);
+
+            await _context.SaveChangesAsync();
+
+            // Guardar las ventas vinculadas a esta importación.
+            var ahora = DateTime.UtcNow;
+
+            foreach (var ventaPreparada in ventasPreparadas)
+            {
+                var venta = new VentaPeriodo
+                {
+                    IdProducto = ventaPreparada.IdProducto,
+                    IdImportacion = importacion.IdImportacion,
+                    CantidadVendida = ventaPreparada.Cantidad,
+                    PrecioUsado = ventaPreparada.PrecioUsado,
+                    PrecioCosto = ventaPreparada.PrecioCosto,
+                    Importe = ventaPreparada.Importe,
+                    CreatedAt = ahora,
+                    UpdatedAt = ahora
+                };
+
+                _context.VentasPeriodo.Add(venta);
+            }
+
+            await _context.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+
+            Console.WriteLine(
+                $"Importación completada. " +
+                $"Período: {fechaInicio:dd/MM/yyyy} al {fechaFin:dd/MM/yyyy}. " +
+                $"Filas del Excel: {rows.Count}. " +
+                $"Ventas guardadas: {ventasPreparadas.Count}.");
         }
-
-        await _context.SaveChangesAsync();
-
-        Console.WriteLine(
-            $"Ventas importadas correctamente: {rows.Count()}");
-
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
 }
 
 
-   
+
 
 
     /*
@@ -558,4 +680,3 @@ public class ImportService : IImportService
         }
 
     */
- 

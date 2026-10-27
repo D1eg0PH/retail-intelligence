@@ -19,7 +19,14 @@ public class PedidoController : ControllerBase
     [HttpPost("generar")]
     public async Task<IActionResult> Generar()
     {
-        await _pedidoService.GenerarPedidosAsync();
+        try
+        {
+            await _pedidoService.GenerarPedidosAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { mensaje = exception.Message });
+        }
 
         return Ok("Pedidos generados.");
     }

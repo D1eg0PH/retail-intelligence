@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using RetailIntelligence.Api.Entities;
+using RetailIntelligence.Api.Integrations.Eleventa;
 
 namespace RetailIntelligence.Api.Data;
 
-public class AppDbContext : DbContext
+public partial class AppDbContext : DbContext
 {
     // Constructor que recibe la configuración de la conexión
     // desde Program.cs mediante inyección de dependencias.
@@ -42,6 +43,7 @@ public class AppDbContext : DbContext
     {
         // Ejecuta primero la configuración base de EF Core
         base.OnModelCreating(modelBuilder);
+        EleventaEntityConfiguration.Configure(modelBuilder);
 
         // ==========================================
         // CONFIGURACIÓN DE LA ENTIDAD DEPARTAMENTO
