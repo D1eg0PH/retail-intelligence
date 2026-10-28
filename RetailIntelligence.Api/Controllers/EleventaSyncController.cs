@@ -36,6 +36,20 @@ public sealed class EleventaSyncController(EleventaSyncService syncService) : Co
         return Ok(await syncService.GetStatusAsync(sourceId, cancellationToken));
     }
 
+    [HttpGet("inventory/closings")]
+    public async Task<ActionResult<EleventaInventoryClosingsResponse>> GetInventoryClosings(
+        [FromQuery] DateOnly? from = null, [FromQuery] DateOnly? to = null, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var today = DateOnly.FromDateTime(EleventaClosingSchedule.LocalTime(now));
+        var end = to ?? today;
+        var start = from ?? end.AddDays(-90);
+        if (start > end || end > today || end.DayNumber - start.DayNumber > 366)
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Período inválido", Detail = "El período debe terminar hoy o antes y abarcar como máximo 366 días." });
+        var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
+        return Ok(await syncService.GetInventoryClosingsAsync(sourceId, start, end, now, cancellationToken));
+    }
+
     [HttpGet("inventory/history")]
     public async Task<ActionResult<EleventaInventoryHistoryResponse>> GetInventoryHistory(
         [FromQuery] int skip = 0, [FromQuery] int take = 30, CancellationToken cancellationToken = default)

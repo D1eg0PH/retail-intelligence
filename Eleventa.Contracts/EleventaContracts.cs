@@ -151,6 +151,13 @@ public sealed record EleventaInventoryHistoryItem(
 public sealed record EleventaInventoryHistoryResponse(
     int Skip, int Take, int Total, IReadOnlyList<EleventaInventoryHistoryItem> Snapshots);
 
+public sealed record EleventaInventoryClosingItem(
+    DateOnly ClosingDate, bool Weekly, bool Monthly, string Status,
+    EleventaInventoryHistoryItem? Snapshot);
+
+public sealed record EleventaInventoryClosingsResponse(
+    DateOnly From, DateOnly To, IReadOnlyList<EleventaInventoryClosingItem> Closings);
+
 public sealed record EleventaCleanupProductDto(
     int SourceProductId, string Code, string Description, int? DepartmentId, string? DepartmentName,
     decimal? Quantity, decimal? Cost,
