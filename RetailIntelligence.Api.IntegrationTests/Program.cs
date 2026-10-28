@@ -12,6 +12,7 @@ internal static class Program
         if (args.Contains("--unit", StringComparer.OrdinalIgnoreCase))
         {
             await EleventaSyncContractTests.RunAsync();
+            EleventaFinanceTests.Validation();
             return;
         }
         var connectionString = Environment.GetEnvironmentVariable(
@@ -49,6 +50,12 @@ internal static class Program
         }
 
         await context.Database.EnsureCreatedAsync();
+        if (args.Contains("--finance", StringComparer.OrdinalIgnoreCase))
+        {
+            await EleventaFinanceTests.RunAsync(context);
+            return;
+        }
+        await EleventaFinanceTests.RunAsync(context);
         await EleventaInventoryHistoryTests.RunAsync(context);
         if (await context.Productos.AnyAsync() ||
             await context.Importaciones.AnyAsync() ||

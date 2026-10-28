@@ -44,6 +44,7 @@ public partial class AppDbContext : DbContext
         // Ejecuta primero la configuración base de EF Core
         base.OnModelCreating(modelBuilder);
         EleventaEntityConfiguration.Configure(modelBuilder);
+        EleventaFinanceConfiguration.Configure(modelBuilder);
 
         // ==========================================
         // CONFIGURACIÓN DE LA ENTIDAD DEPARTAMENTO
