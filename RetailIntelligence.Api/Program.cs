@@ -54,6 +54,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IConfiguracionService, ConfiguracionService>();
 builder.Services.AddScoped<EleventaApiKeyFilter>();
 builder.Services.AddScoped<EleventaSyncService>();
+builder.Services.AddScoped<EleventaFinanceService>();
 
 var app = builder.Build();
 

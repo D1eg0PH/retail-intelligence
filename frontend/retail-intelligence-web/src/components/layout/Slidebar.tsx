@@ -6,12 +6,18 @@ import {
     Settings,
     Store,
     PackageSearch,
-    ClipboardList
+    ClipboardList,
+    Wallet
 } from "lucide-react";
 
 import { NavLink } from "react-router-dom";
 
 const menu = [
+    {
+        name: "Gastos y ganancias",
+        path: "/dashboard/eleventa/finanzas",
+        icon: Wallet
+    },
     {
         name: "Importaciones",
         path: "/",
