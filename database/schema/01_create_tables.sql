@@ -23,6 +23,8 @@ CREATE TABLE ConfiguracionSistema (
     dias_inventario_objetivo SMALLINT NOT NULL DEFAULT 14,
     dias_producto_muerto SMALLINT NOT NULL DEFAULT 60,
     porcentaje_colchon NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (porcentaje_colchon >= 0),
+    porcentaje_umbral_reposicion NUMERIC(5,2) NOT NULL DEFAULT 75.00
+        CHECK (porcentaje_umbral_reposicion BETWEEN 0 AND 100),
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

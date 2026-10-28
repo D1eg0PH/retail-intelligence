@@ -19,7 +19,8 @@ export default function ConfiguracionPage() {
         semanasPromedio: 0,
         diasInventarioObjetivo: 0,
         diasProductoMuerto: 0,
-        porcentajeColchon: 0
+        porcentajeColchon: 0,
+        porcentajeUmbralReposicion: 75
     });
 
     const [loading, setLoading] = useState(true);
@@ -115,6 +116,21 @@ export default function ConfiguracionPage() {
                             setConfiguracion({
                                 ...configuracion,
                                 porcentajeColchon: Number(e.target.value)
+                            })
+                        }
+                    />
+
+                    <Input
+                        label="Umbral para pedir (% del STOP)"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={configuracion.porcentajeUmbralReposicion}
+                        onChange={(e) =>
+                            setConfiguracion({
+                                ...configuracion,
+                                porcentajeUmbralReposicion: Number(e.target.value)
                             })
                         }
                     />

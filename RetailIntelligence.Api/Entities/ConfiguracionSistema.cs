@@ -12,6 +12,8 @@ public class ConfiguracionSistema
 
     public decimal PorcentajeColchon { get; set; }
 
+    public decimal PorcentajeUmbralReposicion { get; set; } = 75m;
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

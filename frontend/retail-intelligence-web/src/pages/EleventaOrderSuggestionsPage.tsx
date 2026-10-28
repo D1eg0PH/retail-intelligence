@@ -12,6 +12,7 @@ type Suggestion = {
 type SuggestionsData = {
     inventoryAtUtc: string | null; salesWindowStart: string; salesThrough: string | null;
     weeksAverage: number; targetInventoryDays: number; bufferPercent: number;
+    reorderThresholdPercent: number;
     productsWithSuggestions: number; estimatedCost: number; products: Suggestion[];
 };
 
@@ -74,7 +75,7 @@ export default function EleventaOrderSuggestionsPage() {
         <header>
             <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Eleventa · solo consulta</p>
             <h1 className="mt-1 text-3xl font-bold text-slate-900">Sugerencias de pedido</h1>
-            <p className="mt-2 text-slate-600">Estimación por ventas y existencia actuales. No crea ni modifica pedidos.</p>
+            <p className="mt-2 text-slate-600">Calcula un STOP con las ventas promedio. Solo sugiere pedir cuando la existencia llega al umbral configurado; no crea ni modifica pedidos.</p>
         </header>
 
         {!token && <form onSubmit={connect} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -98,7 +99,7 @@ export default function EleventaOrderSuggestionsPage() {
 
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-semibold">Revisa estas cantidades antes de comprar.</p>
-                <p className="mt-1">La estimación usa la configuración general y las ventas recibidas. El espejo no informa la cobertura histórica completa ni tiempos de entrega o múltiplos del proveedor; por eso estas cantidades son una referencia, no una orden de compra.</p>
+                <p className="mt-1">El STOP es el inventario objetivo. No se sugiere pedir mientras la existencia supere el {number.format(data.reorderThresholdPercent)}% del STOP; al llegar al umbral o bajar, se propone reponer hasta el STOP. La integración aún no conoce pedidos confirmados en tránsito, tiempos de entrega ni múltiplos del proveedor, así que revisa las cantidades antes de comprar.</p>
             </div>
 
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -133,7 +134,7 @@ export default function EleventaOrderSuggestionsPage() {
                         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>
                             <th className="px-5 py-3">Código / producto</th><th className="px-5 py-3">Departamento / proveedor</th>
                             <th className="px-5 py-3 text-right">Venta promedio/día</th><th className="px-5 py-3 text-right">Existencia</th>
-                            <th className="px-5 py-3 text-right">Cantidad sugerida</th><th className="px-5 py-3 text-right">Costo estimado</th>
+                            <th className="px-5 py-3 text-right">STOP</th><th className="px-5 py-3 text-right">Cantidad sugerida</th><th className="px-5 py-3 text-right">Costo estimado</th>
                         </tr></thead>
                         <tbody className="divide-y divide-slate-100">
                             {visible.map(product => <tr key={product.sourceProductId} className="hover:bg-slate-50">
@@ -141,10 +142,11 @@ export default function EleventaOrderSuggestionsPage() {
                                 <td className="px-5 py-3 text-slate-600">{product.departmentName || "Sin departamento"} · {product.supplierName || "Sin proveedor"}</td>
                                 <td className="px-5 py-3 text-right tabular-nums">{number.format(product.averageDailySales)}</td>
                                 <td className="px-5 py-3 text-right tabular-nums">{number.format(product.currentInventory)}</td>
+                                <td className="px-5 py-3 text-right tabular-nums">{number.format(product.targetQuantity)}</td>
                                 <td className="px-5 py-3 text-right font-semibold tabular-nums text-blue-700">{number.format(product.suggestedQuantity)}</td>
                                 <td className="px-5 py-3 text-right tabular-nums">{product.estimatedCost == null ? "—" : money.format(product.estimatedCost)}</td>
                             </tr>)}
-                            {visible.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay sugerencias para estos filtros."}</td></tr>}
+                            {visible.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-500">{loading ? "Cargando…" : "No hay sugerencias para estos filtros."}</td></tr>}
                         </tbody>
                     </table>
                 </div>

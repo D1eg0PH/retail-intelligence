@@ -26,9 +26,10 @@ INSERT INTO public.configuracionsistema (
     semanas_promedio,
     dias_inventario_objetivo,
     dias_producto_muerto,
-    porcentaje_colchon
+    porcentaje_colchon,
+    porcentaje_umbral_reposicion
 )
-VALUES (1, 4, 14, 60, 0.00)
+VALUES (1, 4, 14, 60, 0.00, 75.00)
 ON CONFLICT (id_configuracion) DO NOTHING;
 
 INSERT INTO public.estadopedido (nombre)

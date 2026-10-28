@@ -71,6 +71,8 @@ Haz respaldo y aplica el SQL en staging primero. La API no llama `EnsureCreated`
 
 Para almacenar los nombres de departamentos y proveedores sincronizados desde Firebird, aplica también `database/schema/05_eleventa_department_supplier_names.sql` antes de desplegar la versión de API que expone esos campos.
 
+Para activar el umbral STOP de Pedidos Eleventa, aplica `database/schema/07_eleventa_reorder_threshold.sql` antes de desplegar esta versión de API. El valor inicial es 75% del STOP y puede cambiarse en Configuración (0–100%).
+
 ## Firebird y cuenta de lectura
 
 El agente configura servidor, ruta, puerto, usuario, contraseña, charset y dialecto externamente. En producción, pide al administrador de Firebird que cree una cuenta dedicada y conceda únicamente `SELECT` a estas tablas, verificando las particularidades de la instalación Eleventa:

@@ -526,6 +526,11 @@ public partial class AppDbContext : DbContext
             .HasColumnName("porcentaje_colchon");
 
         modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.PorcentajeUmbralReposicion)
+            .HasColumnName("porcentaje_umbral_reposicion")
+            .HasDefaultValue(75m);
+
+        modelBuilder.Entity<ConfiguracionSistema>()
             .Property(c => c.CreatedAt)
             .HasColumnName("created_at");
 

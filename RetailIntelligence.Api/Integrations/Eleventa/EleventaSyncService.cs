@@ -356,6 +356,7 @@ public sealed class EleventaSyncService(AppDbContext db)
         var weeks = Math.Max((short)1, config.SemanasPromedio);
         var targetDays = Math.Max((short)1, config.DiasInventarioObjetivo);
         var bufferPercent = Math.Max(0m, config.PorcentajeColchon);
+        var reorderThresholdPercent = Math.Clamp(config.PorcentajeUmbralReposicion, 0m, 100m);
         var nowMexico = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow,
             TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City"));
         var windowStart = nowMexico.Date.AddDays(-(7 * weeks) + 1);
@@ -368,7 +369,7 @@ public sealed class EleventaSyncService(AppDbContext db)
             .FirstOrDefaultAsync(ct);
 
         if (snapshot is null)
-            return new(null, windowStart, null, weeks, targetDays, bufferPercent, 0, 0m, []);
+            return new(null, windowStart, null, weeks, targetDays, bufferPercent, reorderThresholdPercent, 0, 0m, []);
 
         var inventory = await db.EleventaInventoryRows.AsNoTracking()
             .Where(row => row.SourceId == sourceId && row.SnapshotId == snapshot.SnapshotId)
@@ -407,12 +408,16 @@ public sealed class EleventaSyncService(AppDbContext db)
             {
                 var sold = salesByProduct[product.SourceProductId];
                 var averageDaily = sold.Quantity / (7m * weeks);
-                var target = averageDaily * targetDays * (1m + bufferPercent / 100m);
-                var suggested = Math.Max(0m, Math.Ceiling(target - inventory[product.SourceProductId]));
+                var stop = Math.Ceiling(averageDaily * targetDays * (1m + bufferPercent / 100m));
+                var stock = inventory[product.SourceProductId];
+                var reorderThreshold = stop * reorderThresholdPercent / 100m;
+                var suggested = stock <= reorderThreshold
+                    ? Math.Max(0m, Math.Ceiling(stop - stock))
+                    : 0m;
                 return new EleventaOrderSuggestionDto(product.SourceProductId, product.CodeOriginal,
                     product.DescriptionOriginal, product.SourceDepartmentId, product.SourceDepartmentName,
                     product.SourceSupplierId, product.SourceSupplierName,
-                    sold.Quantity, averageDaily, inventory[product.SourceProductId], target, suggested,
+                    sold.Quantity, averageDaily, stock, stop, suggested,
                     product.Cost, product.Cost is >= 0 ? suggested * product.Cost.Value : null, sold.LastSoldAt);
             })
             .Where(product => product.SuggestedQuantity > 0)
@@ -422,7 +427,8 @@ public sealed class EleventaSyncService(AppDbContext db)
 
         return new(new DateTimeOffset(DateTime.SpecifyKind(snapshot.ExtractedAt, DateTimeKind.Utc)),
             windowStart, sales.Count == 0 ? null : sales.Max(row => row.LastSoldAt), weeks, targetDays,
-            bufferPercent, suggestions.Count, suggestions.Sum(product => product.EstimatedCost ?? 0m), suggestions);
+            bufferPercent, reorderThresholdPercent, suggestions.Count,
+            suggestions.Sum(product => product.EstimatedCost ?? 0m), suggestions);
     }
 
     private async Task PersistAsync(EleventaBatchRequest request, DateTime observedAt, CancellationToken ct)
