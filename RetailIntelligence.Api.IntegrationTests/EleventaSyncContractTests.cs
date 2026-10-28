@@ -10,6 +10,7 @@ internal static class EleventaSyncContractTests
         ValidCatalog(source);
         ValidInventory(source);
         InventoryCostSerialization();
+        ClosingSchedule();
         ValidSales(source);
         ValidReturns(source);
         RejectsWrongSource(source);
@@ -20,7 +21,7 @@ internal static class EleventaSyncContractTests
         RejectsOversizedBatch(source);
         await VerifiesDurableOutboxAsync(source);
         await VerifiesDeadLetterRecoveryAsync(source);
-        Console.WriteLine("PASS: 13 Eleventa contract and local outbox checks.");
+        Console.WriteLine("PASS: 14 Eleventa contract, closing schedule and local outbox checks.");
     }
 
     private static void ValidCatalog(Guid source)
@@ -37,6 +38,21 @@ internal static class EleventaSyncContractTests
         batch.Inventory = new EleventaInventoryChunkDto { SnapshotId = Guid.NewGuid(), ExpectedRecordCount = 2, IsFinalChunk = false,
             Rows = [new() { SourceProductId = 1, SourceWarehouseId = 1, Quantity = -0.00000001m }] };
         EleventaSyncService.ValidateRequest(batch, source);
+    }
+
+    private static void ClosingSchedule()
+    {
+        var both = new DateOnly(2026, 5, 31); // Sunday and month end.
+        var at = EleventaClosingSchedule.ScheduledAt(both);
+        Assert(EleventaClosingSchedule.IsWeekly(both) && EleventaClosingSchedule.IsMonthly(both), "combined closing date");
+        Assert(!EleventaClosingSchedule.IsCaptureDue(at.AddSeconds(-1), null), "no early close");
+        Assert(EleventaClosingSchedule.IsCaptureDue(at, null), "close at 22:35 Mexico even though UTC is next day");
+        Assert(!EleventaClosingSchedule.IsCaptureDue(at.AddMinutes(5), at), "restart does not duplicate closing");
+        Assert(EleventaClosingSchedule.IsCaptureDue(at.AddMinutes(30), null), "same-day late capture");
+        Assert(!EleventaClosingSchedule.IsCaptureDue(at.AddHours(2), null), "missed Sunday is not captured on Monday");
+        Assert(EleventaClosingSchedule.NextDelay(at.AddMinutes(-2), TimeSpan.FromMinutes(5)) == TimeSpan.FromMinutes(2), "wake at close instead of waiting for hourly inventory");
+        Assert(EleventaClosingSchedule.IsClosingDay(new DateOnly(2028, 2, 29)), "leap year month end");
+        Assert(!EleventaClosingSchedule.IsClosingDay(new DateOnly(2026, 10, 27)), "ordinary weekday");
     }
 
     private static void InventoryCostSerialization()

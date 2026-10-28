@@ -38,7 +38,7 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
 
     public async Task<IReadOnlyList<(EleventaBatchRequest Batch, string? CursorKey, string? CursorAfter)>> ExtractAsync(
         int salesCursor, int returnCursor, DateTime salesWindowStart, DateTime returnsWindowStart,
-        bool includeCatalog, bool includeInventory, CancellationToken ct)
+        bool includeCatalog, bool includeInventory, CancellationToken ct, bool inventoryOnly = false)
     {
         ValidateFirebirdConfiguration();
         if (options.Integration.SourceId == Guid.Empty)
@@ -90,6 +90,12 @@ public sealed class FirebirdExtractor(AgentOptions options, ILogger<FirebirdExtr
                 batches.Add((batch, index == chunks.Length - 1 ? "inventory-last-at" : null,
                 index == chunks.Length - 1 ? now.ToString("O") : null));
             }
+        }
+
+        if (inventoryOnly)
+        {
+            await transaction.CommitAsync(ct);
+            return batches;
         }
 
         var sales = await ReadSalesAsync(connection, transaction, salesCursor, salesWindowStart, productIdsByCode, ct);
