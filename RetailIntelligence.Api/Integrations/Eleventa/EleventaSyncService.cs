@@ -77,6 +77,12 @@ public sealed class EleventaSyncService(AppDbContext db)
         var total = await query.CountAsync(ct);
         var snapshots = await query.OrderByDescending(s => s.ExtractedAt).ThenBy(s => s.SnapshotId)
             .Skip(skip).Take(take).ToListAsync(ct);
+        return new(skip, take, total, await BuildInventoryHistoryAsync(sourceId, snapshots, ct));
+    }
+
+    private async Task<List<EleventaInventoryHistoryItem>> BuildInventoryHistoryAsync(
+        Guid sourceId, List<EleventaInventorySnapshot> snapshots, CancellationToken ct)
+    {
         var ids = snapshots.Select(s => s.SnapshotId).ToArray();
         var totals = await db.EleventaInventoryRows.AsNoTracking()
             .Where(r => r.SourceId == sourceId && ids.Contains(r.SnapshotId))
@@ -97,7 +103,35 @@ public sealed class EleventaSyncService(AppDbContext db)
                 value?.RowCount ?? 0, value?.TotalUnits ?? 0m, knownValue, missing,
                 missing == 0 ? knownValue : null);
         }).ToList();
-        return new(skip, take, total, items);
+        return items;
+    }
+
+    public async Task<EleventaInventoryClosingsResponse> GetInventoryClosingsAsync(
+        Guid sourceId, DateOnly from, DateOnly to, DateTimeOffset now, CancellationToken ct)
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(from.ToDateTime(TimeOnly.MinValue), EleventaClosingSchedule.TimeZone);
+        var end = TimeZoneInfo.ConvertTimeToUtc(to.AddDays(1).ToDateTime(TimeOnly.MinValue), EleventaClosingSchedule.TimeZone);
+        var snapshots = await db.EleventaInventorySnapshots.AsNoTracking()
+            .Where(s => s.SourceId == sourceId && s.IsComplete && s.ExtractedAt >= start && s.ExtractedAt < end && s.ExtractedAt <= now.UtcDateTime)
+            .OrderBy(s => s.ExtractedAt).ThenBy(s => s.SnapshotId).ToListAsync(ct);
+        // Only a capture from the closing day, after the scheduled time, can close it.
+        var selected = snapshots.Where(s =>
+            TimeOnly.FromDateTime(EleventaClosingSchedule.LocalTime(new DateTimeOffset(s.ExtractedAt, TimeSpan.Zero))) >= EleventaClosingSchedule.ClosingTime)
+            .GroupBy(s => DateOnly.FromDateTime(EleventaClosingSchedule.LocalTime(new DateTimeOffset(s.ExtractedAt, TimeSpan.Zero))))
+            .Where(g => EleventaClosingSchedule.IsClosingDay(g.Key))
+            .ToDictionary(g => g.Key, g => g.First());
+        var values = (await BuildInventoryHistoryAsync(sourceId, selected.Values.ToList(), ct)).ToDictionary(s => s.SnapshotId);
+        var closings = new List<EleventaInventoryClosingItem>();
+        for (var date = from; date <= to; date = date.AddDays(1))
+        {
+            if (!EleventaClosingSchedule.IsClosingDay(date) || EleventaClosingSchedule.ScheduledAt(date) > now) continue;
+            EleventaInventoryHistoryItem? value = null;
+            if (selected.TryGetValue(date, out var snapshot)) value = values[snapshot.SnapshotId];
+            var status = value is null ? "missing" : value.RowsWithoutCost > 0 ? "missing-cost"
+                : value.ExtractedAtUtc - EleventaClosingSchedule.ScheduledAt(date) > TimeSpan.FromMinutes(5) ? "late" : "complete";
+            closings.Add(new(date, EleventaClosingSchedule.IsWeekly(date), EleventaClosingSchedule.IsMonthly(date), status, value));
+        }
+        return new(from, to, closings.OrderByDescending(c => c.ClosingDate).ToList());
     }
 
     public async Task<EleventaProductPageResponse> GetProductsAsync(Guid sourceId, int skip, int take, CancellationToken ct)

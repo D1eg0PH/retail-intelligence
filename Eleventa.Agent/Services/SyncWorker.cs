@@ -34,7 +34,7 @@ public sealed class SyncWorker(
                 await SafeRecordRunAsync(false, "Falló un ciclo de sincronización.", false, false, stoppingToken);
             }
 
-            try { await Task.Delay(interval, stoppingToken); }
+            try { await Task.Delay(EleventaClosingSchedule.NextDelay(DateTimeOffset.UtcNow, interval), stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
@@ -48,6 +48,22 @@ public sealed class SyncWorker(
         await store.InitializeAsync(ct);
         bool? firebirdReachable = null;
         bool? apiReachable = null;
+        var closingNow = DateTimeOffset.UtcNow;
+        var lastClosingCapture = await store.GetDateStateAsync("inventory-closing-last-captured-at", ct);
+        if (EleventaClosingSchedule.IsCaptureDue(closingNow, lastClosingCapture))
+        {
+            // Capture locally even when older batches are awaiting upload. The outbox
+            // retains the original timestamp/costs if the network is unavailable.
+            var closingBatches = await extractor.ExtractAsync(0, 0,
+                DateTime.Today, DateTime.Today, false, true, ct, inventoryOnly: true);
+            foreach (var (batch, cursorKey, cursorAfter) in closingBatches)
+            {
+                ValidateLocalBatch(batch);
+                await store.EnqueueAsync(batch, cursorKey, cursorAfter, ct);
+            }
+            await store.SetStateAsync("inventory-closing-last-captured-at", closingNow.ToString("O"), ct);
+            firebirdReachable = true;
+        }
         var pending = await store.GetPendingAsync(ct);
         if (pending.Count == 0)
         {
