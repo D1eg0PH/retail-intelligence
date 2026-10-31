@@ -186,7 +186,7 @@ public sealed record EleventaProductCleanupResponse(
 
 public sealed record EleventaOrderSuggestionsResponse(
     DateTimeOffset? InventoryAtUtc, DateTime SalesWindowStart, DateTime? SalesThrough,
-    short WeeksAverage, short TargetInventoryDays, decimal BufferPercent,
+    short WeeksAverage, short TargetInventoryDays, decimal BufferPercent, decimal ReorderThresholdPercent,
     int ProductsWithSuggestions, decimal EstimatedCost,
     IReadOnlyList<EleventaOrderSuggestionDto> Products);
 

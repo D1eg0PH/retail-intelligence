@@ -19,13 +19,15 @@ INSERT INTO ConfiguracionSistema (
     id_configuracion,
     semanas_promedio,
     dias_inventario_objetivo,
-    dias_producto_muerto
+    dias_producto_muerto,
+    porcentaje_umbral_reposicion
 )
 VALUES (
     1,
     4,
     14,
-    60
+    60,
+    75.00
 );
 
 -- ==========================================

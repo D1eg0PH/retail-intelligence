@@ -11,6 +11,8 @@ import DepuracionProductosPage from "./pages/DepuracionProductosPage";
 import EleventaDashboardPage from "./pages/EleventaDashboardPage";
 import EleventaProductCleanupPage from "./pages/EleventaProductCleanupPage";
 import EleventaOrderSuggestionsPage from "./pages/EleventaOrderSuggestionsPage";
+import EleventaOrderEditorPage from "./pages/EleventaOrderEditorPage";
+import EleventaFinancePage from "./pages/EleventaFinancePage";
 
 function App() {
     return (
@@ -18,6 +20,7 @@ function App() {
             <Routes>
 
                 <Route element={<Layout />}>
+                    <Route path="/dashboard/eleventa/finanzas" element={<EleventaFinancePage />} />
 
                     <Route
                         path="/"
@@ -62,6 +65,7 @@ function App() {
                         path="/dashboard/eleventa/pedidos"
                         element={<EleventaOrderSuggestionsPage />}
                     />
+                    <Route path="/dashboard/eleventa/pedidos/editar" element={<EleventaOrderEditorPage />} />
 
                 </Route>
 

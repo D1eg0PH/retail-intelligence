@@ -3,4 +3,5 @@ export interface Configuracion {
     diasInventarioObjetivo: number;
     diasProductoMuerto: number;
     porcentajeColchon: number;
+    porcentajeUmbralReposicion: number;
 }

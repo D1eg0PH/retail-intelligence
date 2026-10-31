@@ -21,10 +21,18 @@ public class ConfiguracionService : IConfiguracionService
         var configuracionActual = await _context.ConfiguracionSistema
             .SingleAsync();
 
+        if (configuracion.PorcentajeUmbralReposicion is < 0m or > 100m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(configuracion.PorcentajeUmbralReposicion),
+                "El umbral de reposición debe estar entre 0 y 100% del STOP.");
+        }
+
         configuracionActual.SemanasPromedio = configuracion.SemanasPromedio;
         configuracionActual.DiasInventarioObjetivo = configuracion.DiasInventarioObjetivo;
         configuracionActual.DiasProductoMuerto = configuracion.DiasProductoMuerto;
         configuracionActual.PorcentajeColchon = configuracion.PorcentajeColchon;
+        configuracionActual.PorcentajeUmbralReposicion = configuracion.PorcentajeUmbralReposicion;
 
         configuracionActual.UpdatedAt = DateTime.UtcNow;
 
@@ -41,7 +49,8 @@ public class ConfiguracionService : IConfiguracionService
             SemanasPromedio = configuracion.SemanasPromedio,
             DiasInventarioObjetivo = configuracion.DiasInventarioObjetivo,
             DiasProductoMuerto = configuracion.DiasProductoMuerto,
-            PorcentajeColchon = configuracion.PorcentajeColchon
+            PorcentajeColchon = configuracion.PorcentajeColchon,
+            PorcentajeUmbralReposicion = configuracion.PorcentajeUmbralReposicion
         };
     }
 }

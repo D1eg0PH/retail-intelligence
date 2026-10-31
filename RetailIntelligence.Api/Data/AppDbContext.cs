@@ -44,6 +44,7 @@ public partial class AppDbContext : DbContext
         // Ejecuta primero la configuración base de EF Core
         base.OnModelCreating(modelBuilder);
         EleventaEntityConfiguration.Configure(modelBuilder);
+        EleventaFinanceConfiguration.Configure(modelBuilder);
 
         // ==========================================
         // CONFIGURACIÓN DE LA ENTIDAD DEPARTAMENTO
@@ -523,6 +524,11 @@ public partial class AppDbContext : DbContext
         modelBuilder.Entity<ConfiguracionSistema>()
             .Property(c => c.PorcentajeColchon)
             .HasColumnName("porcentaje_colchon");
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .Property(c => c.PorcentajeUmbralReposicion)
+            .HasColumnName("porcentaje_umbral_reposicion")
+            .HasDefaultValue(75m);
 
         modelBuilder.Entity<ConfiguracionSistema>()
             .Property(c => c.CreatedAt)
