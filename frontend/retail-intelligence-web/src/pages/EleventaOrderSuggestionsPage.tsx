@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertTriangle, Boxes, ClipboardList, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Boxes, ClipboardList, Pencil, RefreshCw, Search } from "lucide-react";
 import { api } from "../api/axios";
+import { useNavigate } from "react-router-dom";
 
 type Suggestion = {
     sourceProductId: number; code: string; description: string; departmentId: number | null;
@@ -21,6 +22,7 @@ const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN
 const number = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 });
 
 export default function EleventaOrderSuggestionsPage() {
+    const navigate = useNavigate();
     const [token, setToken] = useState(() => sessionStorage.getItem(tokenStorageKey) ?? "");
     const [tokenInput, setTokenInput] = useState("");
     const [data, setData] = useState<SuggestionsData | null>(null);
@@ -112,6 +114,23 @@ export default function EleventaOrderSuggestionsPage() {
                                 {data.salesThrough ? ` · Última venta incluida: ${new Date(data.salesThrough).toLocaleDateString("es-MX")}` : " · Sin ventas en el período"}
                             </p>
                         </div>
+                        <button onClick={() => {
+                            sessionStorage.setItem("retail-intelligence-eleventa-order-draft", JSON.stringify(data.products.map(product => ({
+                                sourceProductId: product.sourceProductId,
+                                code: product.code,
+                                description: product.description,
+                                departmentName: product.departmentName,
+                                supplierName: product.supplierName,
+                                quantity: product.suggestedQuantity,
+                                cost: product.cost,
+                                suggestedQuantity: product.suggestedQuantity,
+                                currentInventory: product.currentInventory,
+                                addedManually: false
+                            }))));
+                            navigate("/dashboard/eleventa/pedidos/editar");
+                        }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                            <Pencil size={16} /> Editar pedido
+                        </button>
                         <button onClick={() => void load(token)} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                             <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Actualizar
                         </button>

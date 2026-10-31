@@ -134,9 +134,12 @@ public sealed class EleventaSyncService(AppDbContext db)
         return new(from, to, closings.OrderByDescending(c => c.ClosingDate).ToList());
     }
 
-    public async Task<EleventaProductPageResponse> GetProductsAsync(Guid sourceId, int skip, int take, CancellationToken ct)
+    public async Task<EleventaProductPageResponse> GetProductsAsync(Guid sourceId, int skip, int take, string? search, CancellationToken ct)
     {
         var query = db.EleventaProducts.AsNoTracking().Where(p => p.SourceId == sourceId);
+        var normalizedSearch = search?.Trim().ToLower();
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+            query = query.Where(p => p.CodeOriginal.ToLower().Contains(normalizedSearch) || p.DescriptionOriginal.ToLower().Contains(normalizedSearch));
         var total = await query.CountAsync(ct);
         var products = await query.OrderBy(p => p.SourceProductId).Skip(skip).Take(take)
             .Select(p => new EleventaProductViewDto(p.SourceProductId, p.CodeOriginal, p.DescriptionOriginal,

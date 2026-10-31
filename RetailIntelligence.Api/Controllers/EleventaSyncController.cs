@@ -61,13 +61,12 @@ public sealed class EleventaSyncController(EleventaSyncService syncService) : Co
     }
 
     [HttpGet("catalog/products")]
-    public async Task<ActionResult<EleventaProductPageResponse>> GetProducts(
-        [FromQuery] int skip = 0, [FromQuery] int take = 100, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<EleventaProductPageResponse>> GetProducts([FromQuery] int skip = 0, [FromQuery] int take = 100, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         if (skip < 0 || take is < 1 or > 500)
             return BadRequest(new ProblemDetails { Status = 400, Title = "Paginación inválida", Detail = "skip debe ser no negativo y take entre 1 y 500." });
         var sourceId = (Guid)HttpContext.Items[EleventaApiKeyFilter.AuthenticatedSourceItem]!;
-        return Ok(await syncService.GetProductsAsync(sourceId, skip, take, cancellationToken));
+        return Ok(await syncService.GetProductsAsync(sourceId, skip, take, search, cancellationToken));
     }
 
     [HttpGet("dashboard")]
